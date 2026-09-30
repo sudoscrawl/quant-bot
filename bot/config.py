@@ -1,6 +1,7 @@
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
 class Config(BaseSettings):
     api_key: str = Field(..., alias="API_KEY")
     api_secret: str = Field(..., alias="API_SECRET")
