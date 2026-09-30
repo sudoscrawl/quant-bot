@@ -1,20 +1,13 @@
 [project]
 name = "quant-bot"
 version = "0.1.0"
-description = "Add your description here"
+description = "XtraSpeed submission for quant hackathon"
 readme = "README.md"
 authors = [
     { name = "Ayush Kumar", email = "ayush438500@gmail.com" }
 ]
 requires-python = ">=3.14"
 dependencies = []
-
-[project.scripts]
-quant-bot = "quant_bot:main"
-
-[build-system]
-requires = ["uv_build>=0.12.19,<0.13.0"]
-build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
