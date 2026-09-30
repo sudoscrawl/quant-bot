@@ -4,7 +4,8 @@ version = "0.1.0"
 description = "XtraSpeed submission for quant hackathon"
 readme = "README.md"
 authors = [
-    { name = "Ayush Kumar", email = "ayush438500@gmail.com" }
+    { name = "Ayush Kumar", email = "ayush438500@gmail.com" },
+    { name = "Divyanshu Singh", email="anshusingh.2007.1.19@gmail.com"}
 ]
 requires-python = ">=3.14"
 dependencies = [
@@ -14,4 +15,6 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "ruff>=0.16.9",
+    "ty>=0.0.84",
 ]
