@@ -7,7 +7,9 @@ authors = [
     { name = "Ayush Kumar", email = "ayush438500@gmail.com" }
 ]
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "aiosqlite>=0.22.1",
+]
 
 [dependency-groups]
 dev = [
