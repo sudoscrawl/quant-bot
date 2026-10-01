@@ -15,16 +15,11 @@ class RoostooClient:
         self.api_key = config.api_key
         self.api_secret = config.api_secret
 
-        self.client = httpx.Client(
-            base_url = self.base_url,
-            timeout= 10.0
-        )
+        self.client = httpx.Client(base_url=self.base_url, timeout=10.0)
 
     def _generate_signature(self, params: dict) -> str:
         """Create an HMAC-SHA256 hex signature over sorted query params."""
-        query_string = "&".join(
-            f"{k}={params[k]}" for k in sorted(params.keys())
-        )
+        query_string = "&".join(f"{k}={params[k]}" for k in sorted(params.keys()))
         return hmac.new(
             self.api_secret.encode("utf-8"),
             query_string.encode("utf-8"),
@@ -42,7 +37,6 @@ class RoostooClient:
     def _timestamp_ms() -> int:
         """Return the current UNIX timestamp in milliseconds."""
         return int(time.time() * 1000)
-
 
     def ping(self) -> dict:
         """Get the server time from the Roostoo API to verify connectivity."""
@@ -65,7 +59,6 @@ class RoostooClient:
         response = self.client.get("/v3/ticker", params=params)
         response.raise_for_status()
         return response.json()
-
 
     def get_balance(self) -> dict:
         """Get account balances for all assets."""
