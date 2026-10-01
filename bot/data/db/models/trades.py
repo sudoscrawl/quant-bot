@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import TIMESTAMP, Float, Integer, Text
+from sqlalchemy import TIMESTAMP, Float, Index, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from bot.data.db.engine import Base
@@ -20,3 +20,5 @@ class Trades(Base):
     mode: Mapped[str] = mapped_column(Text, nullable=False)
     order_id: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False)
+
+    __table_args__ = Index("idx_trades_ts", "timestamp")

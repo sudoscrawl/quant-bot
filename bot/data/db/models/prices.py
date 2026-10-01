@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import TIMESTAMP, Float, Text
+from sqlalchemy import TIMESTAMP, Float, Index, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from bot.data.db.engine import Base
@@ -19,3 +19,5 @@ class Prices(Base):
     change_24h: Mapped[float] = mapped_column(Float, nullable=False)
     unit_trade_value: Mapped[float] = mapped_column(Float, nullable=False)
     spread_bps: Mapped[float] = mapped_column(Float, nullable=False)
+
+    __table_args__ = (Index("idx_prices_pair_ts", "pair", "timestamp"),)
