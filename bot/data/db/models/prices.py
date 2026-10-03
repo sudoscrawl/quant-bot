@@ -1,6 +1,4 @@
-from datetime import datetime
-
-from sqlalchemy import TIMESTAMP, Float, Index, Text
+from sqlalchemy import BigInteger, Float, Index, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from bot.data.db.engine import Base
@@ -9,9 +7,7 @@ from bot.data.db.engine import Base
 class Prices(Base):
     __tablename__ = "prices"
 
-    timestamp: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, primary_key=True
-    )
+    timestamp_ms: Mapped[int] = mapped_column(BigInteger, primary_key=True, nullable=False)
     pair: Mapped[str] = mapped_column(Text, primary_key=True, nullable=False)
     price: Mapped[float] = mapped_column(Float, nullable=False)
     bid: Mapped[float] = mapped_column(Float, nullable=False)
@@ -20,4 +16,4 @@ class Prices(Base):
     unit_trade_value: Mapped[float] = mapped_column(Float, nullable=False)
     spread_bps: Mapped[float] = mapped_column(Float, nullable=False)
 
-    __table_args__ = (Index("idx_prices_pair_ts", "pair", "timestamp"),)
+    __table_args__ = (Index("idx_prices_pair_ts", "pair", "timestamp_ms"),)

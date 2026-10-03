@@ -168,5 +168,30 @@ class RoostooClient:
         response.raise_for_status()
         return response.json()
 
+    def server_time(self) -> dict:
+        """Alias for ping() — returns server time."""
+        return self.ping()
+
+    def exchange_info(self) -> dict:
+        """Alias for get_exchange_info()."""
+        return self.get_exchange_info()
+
+    def get_all_tickers(self) -> dict:
+        """Return the Data dict of all pair tickers keyed by pair name."""
+        data = self.get_ticker()
+        return data.get("Data", {})
+
+    def get_usd_balance(self) -> float:
+        """Return free USD balance from the spot wallet."""
+        data = self.get_balance()
+        wallet = data.get("SpotWallet") or data.get("Wallet", {})
+        return wallet.get("USD", {}).get("Free", 0.0)
+
+    def get_coin_balance(self, coin: str) -> float:
+        """Return free balance of a specific coin, e.g. 'BTC'."""
+        data = self.get_balance()
+        wallet = data.get("SpotWallet") or data.get("Wallet", {})
+        return wallet.get(coin.upper(), {}).get("Free", 0.0)
+
 
 roostoo = RoostooClient()
