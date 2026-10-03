@@ -1,4 +1,4 @@
-# Exponential Momentum strategy using (EMA)
+# Using Exponential Momentum strategy (EMA) with changes...
 
 In /bot/strategy/momentum.py:
         momentum.py — EMA crossover + RSI strategy
@@ -16,3 +16,6 @@ In /bot/strategy/momentum.py:
 
 In /bot/risk/manager.py:
         Just some risk management, so that it should have a min of 5% in cash (USD) and should use 15% of portfolio per trade.
+
+/bot/logger/trade_logger.py should be updated to a more elegant logging.
+
