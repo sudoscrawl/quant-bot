@@ -15,4 +15,4 @@ class ApiEvents(Base):
     success: Mapped[bool] = mapped_column(Boolean, nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
 
-    __table_args__ = Index("idx_api_events_ts", "timestamp")
+    __table_args__ = (Index("idx_api_events_ts", "timestamp"),)

@@ -20,5 +20,9 @@ class Trades(Base):
     mode: Mapped[str] = mapped_column(Text, nullable=False)
     order_id: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False)
+    session_id: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    __table_args__ = Index("idx_trades_ts", "timestamp")
+    __table_args__ = (
+        Index("idx_trades_ts", "timestamp"),
+        Index("idx_trades_session_ts", "session_id", "timestamp"),
+    )
