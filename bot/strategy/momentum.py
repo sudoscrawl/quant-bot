@@ -49,7 +49,7 @@ def rsi(prices: list[float], period: int) -> float:
     """Compute RSI using only the most recent `period + 1` prices."""
     if len(prices) < period + 1:
         return 50.0
-    relevant = prices[-(period + 1):]
+    relevant = prices[-(period + 1) :]
     changes = [relevant[i + 1] - relevant[i] for i in range(len(relevant) - 1)]
     gain = sum(change for change in changes if change > 0) / period
     loss = sum(-change for change in changes if change < 0) / period
@@ -135,15 +135,15 @@ class MomentumStrategy:
             # 2. Soft stop-loss — only exit when momentum has already turned
             #    (fast EMA below slow for ≥ 2 ticks confirms it's not a brief spike).
             #    Avoids panic-selling a dip that's still in an uptrend.
-            elif (
-                pnl <= -cfg.stop_loss_pct
-                and state.ticks_below_slow >= 2
-            ):
+            elif pnl <= -cfg.stop_loss_pct and state.ticks_below_slow >= 2:
                 signal = "SELL"
                 state.cooldown_cycles = cfg.loss_cooldown_cycles
                 logger.warning(
                     "%s SOFT STOP-LOSS: pnl=%.2f%% ema_below=%d ticks — cooldown %d",
-                    pair, pnl, state.ticks_below_slow, cfg.loss_cooldown_cycles,
+                    pair,
+                    pnl,
+                    state.ticks_below_slow,
+                    cfg.loss_cooldown_cycles,
                 )
 
             # 3. EMA bearish crossover — fresh cross of fast below slow, held long
@@ -174,7 +174,10 @@ class MomentumStrategy:
                 state.cooldown_cycles = cfg.loss_cooldown_cycles if pnl < 0 else 0
                 logger.info(
                     "%s STAGNANT EXIT: pnl=%.2f%% cycles=%d ema_below=%d ticks",
-                    pair, pnl, state.hold_cycles, state.ticks_below_slow,
+                    pair,
+                    pnl,
+                    state.hold_cycles,
+                    state.ticks_below_slow,
                 )
 
             if signal == "SELL":
@@ -197,8 +200,8 @@ class MomentumStrategy:
                 and state.cooldown_cycles == 0
                 and cfg.rsi_buy_min <= current_rsi <= cfg.rsi_buy_max
                 and separation >= cfg.ema_separation_pct
-                and state.entry_price == 0          # don't overwrite open position
-                and state.last_signal != "BUY"      # don't re-fire stale BUY state
+                and state.entry_price == 0  # don't overwrite open position
+                and state.last_signal != "BUY"  # don't re-fire stale BUY state
             ):
                 signal = "BUY"
                 state.entry_price = price
@@ -208,8 +211,14 @@ class MomentumStrategy:
             logger.info(
                 "%s signal=%s | fast=%.6f slow=%.6f rsi=%.1f sep=%.4f%% "
                 "cooldown=%d confirm_ticks=%d",
-                pair, signal, fast, slow, current_rsi, separation,
-                state.cooldown_cycles, state.ticks_above_slow,
+                pair,
+                signal,
+                fast,
+                slow,
+                current_rsi,
+                separation,
+                state.cooldown_cycles,
+                state.ticks_above_slow,
             )
 
         state.last_signal = signal

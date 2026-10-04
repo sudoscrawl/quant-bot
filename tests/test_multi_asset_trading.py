@@ -1,9 +1,7 @@
-from unittest.mock import MagicMock, patch
 
-import pytest
 
 from bot.config import config
-from bot.main import _score_opportunity, _select_tracked_symbols, _save_state
+from bot.main import _save_state, _score_opportunity, _select_tracked_symbols
 from bot.risk import RiskManager
 from bot.services.db_queries import DB
 
