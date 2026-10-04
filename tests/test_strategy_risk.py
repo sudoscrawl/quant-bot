@@ -17,7 +17,7 @@ def test_strategy_soft_stop_fires_after_ema_reversal() -> None:
     strategy.notify_bought("BTC/USD", 114.5)
 
     # Hard crash — large enough to push fast EMA below slow
-    strategy.update("BTC/USD", 90.0)   # tick 1: ticks_below_slow=1, HOLD
+    strategy.update("BTC/USD", 90.0)  # tick 1: ticks_below_slow=1, HOLD
     result = strategy.update("BTC/USD", 90.0)  # tick 2: ticks_below_slow=2 → SELL
     assert result == "SELL"
 

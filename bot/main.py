@@ -127,7 +127,7 @@ def _detect_market_state(
             "stop_loss_pct": 2.0,
             "take_profit_pct": 2.5,
             "min_profit_pct": 0.20,
-            "min_hold_cycles": 8,    # hold longer — early recovery needs time to develop
+            "min_hold_cycles": 8,  # hold longer — early recovery needs time to develop
             "stagnant_exit_cycles": 16,
         },
         "TRENDING": {
@@ -139,7 +139,7 @@ def _detect_market_state(
             "stop_loss_pct": 2.5,
             "take_profit_pct": 3.5,
             "min_profit_pct": 0.25,
-            "min_hold_cycles": 8,    # don't cut winners on minor EMA wiggles
+            "min_hold_cycles": 8,  # don't cut winners on minor EMA wiggles
             "stagnant_exit_cycles": 25,
         },
         "RANGING": {
@@ -151,7 +151,7 @@ def _detect_market_state(
             "stop_loss_pct": 2.0,
             "take_profit_pct": 2.0,
             "min_profit_pct": 0.20,
-            "min_hold_cycles": 5,    # exit quickly on reversal in choppy market
+            "min_hold_cycles": 5,  # exit quickly on reversal in choppy market
             "stagnant_exit_cycles": 15,
         },
         "OVERBOUGHT": {
@@ -567,7 +567,11 @@ def run() -> None:
                     #   - RSI < 40 (momentum weakening)
                     #   - Held for ≥ 3 cycles (not a brand-new entry)
                     ind = strategy.indicators(pair)
-                    if not ind.get("warming_up", False) and price > 0 and entry_price > 0:
+                    if (
+                        not ind.get("warming_up", False)
+                        and price > 0
+                        and entry_price > 0
+                    ):
                         pnl_pct = (price - entry_price) / entry_price * 100
                         fast_ema = float(ind.get("fast_ema", 0.0))
                         slow_ema = float(ind.get("slow_ema", 1.0))
@@ -606,7 +610,11 @@ def run() -> None:
                                     logger.info(
                                         "PROACTIVE EXIT %s qty=%s @ %.8f "
                                         "pnl=%.2f%% rsi=%.1f",
-                                        pair, quantity, fill, pnl_pct, current_rsi,
+                                        pair,
+                                        quantity,
+                                        fill,
+                                        pnl_pct,
+                                        current_rsi,
                                     )
                             continue  # skip normal SELL check for this pair
 
@@ -673,7 +681,10 @@ def run() -> None:
 
                 if not risk.halted and candidates:
                     for cand in candidates:
-                        if available_slots <= 0 or len(positions) >= config.max_open_positions:
+                        if (
+                            available_slots <= 0
+                            or len(positions) >= config.max_open_positions
+                        ):
                             # ── Position rotation ─────────────────────────
                             # Slots are full. Rotate out the worst loser if:
                             #   - Its loss is between -0.5% and -1.8%
@@ -715,7 +726,9 @@ def run() -> None:
                             if worst_qty <= 0:
                                 continue
 
-                            rot_result = client.place_order(worst_pair, "SELL", worst_qty)
+                            rot_result = client.place_order(
+                                worst_pair, "SELL", worst_qty
+                            )
                             if not _accepted(rot_result, worst_pair, "SELL"):
                                 continue
 
@@ -738,10 +751,16 @@ def run() -> None:
                             logger.info(
                                 "ROTATION SELL %s (pnl=%.2f%%) to make room for %s "
                                 "(score=%.4f)",
-                                worst_pair, worst_pnl, cand["pair"], new_score,
+                                worst_pair,
+                                worst_pnl,
+                                cand["pair"],
+                                new_score,
                             )
 
-                        if available_slots <= 0 or len(positions) >= config.max_open_positions:
+                        if (
+                            available_slots <= 0
+                            or len(positions) >= config.max_open_positions
+                        ):
                             break
 
                         pair = cand["pair"]
@@ -781,8 +800,8 @@ def run() -> None:
                                 strategy.notify_bought(pair, fill)
                                 positions[pair] = fill
                                 _save_positions(positions)
-                                available_usd -= quantity * fill * (
-                                    1 + config.commission_rate
+                                available_usd -= (
+                                    quantity * fill * (1 + config.commission_rate)
                                 )
                                 available_slots -= 1
                                 cycle_buys.append(pair)
