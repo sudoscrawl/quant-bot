@@ -11,11 +11,16 @@ BASE_URL = "https://mock-api.roostoo.com"
 
 class RoostooClient:
     def __init__(self) -> None:
-        self.base_url = BASE_URL
+        configured_url = getattr(config, "exchange_base_url", BASE_URL)
+        self.base_url = configured_url if isinstance(configured_url, str) else BASE_URL
         self.api_key = config.api_key
         self.api_secret = config.api_secret
 
-        self.client = httpx.Client(base_url=self.base_url, timeout=10.0)
+        configured_timeout = getattr(config, "request_timeout_seconds", 10.0)
+        timeout = (
+            configured_timeout if isinstance(configured_timeout, (int, float)) else 10.0
+        )
+        self.client = httpx.Client(base_url=self.base_url, timeout=timeout)
 
     def _generate_signature(self, params: dict) -> str:
         """Create an HMAC-SHA256 hex signature over sorted query params."""
@@ -52,7 +57,7 @@ class RoostooClient:
 
     def get_ticker(self, pair: str | None = None) -> dict:
         """Get price ticker, optionally filtered by trading *pair* (e.g. ``"BTC/USD"``)."""
-        params: dict = {"timestamp": int(time.time())}
+        params: dict = {"timestamp": self._timestamp_ms()}
         if pair is not None:
             params["pair"] = pair
 
@@ -73,7 +78,7 @@ class RoostooClient:
 
     def place_order(
         self,
-        coin: str,
+        pair: str,
         side: str,
         quantity: float,
         price: float | None = None,
@@ -81,15 +86,15 @@ class RoostooClient:
         """Place a MARKET or LIMIT order.
 
         Args:
-            coin: Base asset symbol (e.g. ``"BNB"``).  The pair is built as ``coin/USD``.
+            pair: Trading pair (e.g. ``"BNB/USD"``).
             side: ``"BUY"`` or ``"SELL"``.
             quantity: Order quantity.
             price: Limit price.  When *None* a MARKET order is placed.
         """
         payload: dict = {
             "timestamp": self._timestamp_ms(),
-            "pair": f"{coin}/USD",
-            "side": side,
+            "pair": pair.upper(),
+            "side": side.upper(),
             "quantity": quantity,
         }
 
@@ -168,5 +173,5 @@ class RoostooClient:
         response.raise_for_status()
         return response.json()
 
-
-roostoo = RoostooClient()
+    def close(self) -> None:
+        self.client.close()
