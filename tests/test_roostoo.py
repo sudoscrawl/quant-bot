@@ -38,6 +38,8 @@ class TestPing:
             request=httpx.Request("GET", "https://mock-api.roostoo.com/v3/serverTime"),
         )
 
-        with patch.object(client.client, "get", return_value=mock_response):
-            with pytest.raises(httpx.HTTPStatusError):
-                client.ping()
+        with (
+            patch.object(client.client, "get", return_value=mock_response),
+            pytest.raises(httpx.HTTPStatusError),
+        ):
+            client.ping()
