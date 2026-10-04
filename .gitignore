@@ -207,7 +207,6 @@ tempCodeRunnerFile.py
 .ruff_cache/
 
 # Runtime state (Docker persists logs through ./logs bind mount).
-logs/
 data/
 *.sqlite3
 *.sqlite3-shm
