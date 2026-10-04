@@ -52,8 +52,15 @@ def upgrade() -> None:
         sa.Column("settled", sa.Boolean(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("idx_predictions_pair", "predictions", ["pair", "timestamp_ms"], unique=False)
-    op.create_index("idx_predictions_target", "predictions", ["target_time_ms", "settled"], unique=False)
+    op.create_index(
+        "idx_predictions_pair", "predictions", ["pair", "timestamp_ms"], unique=False
+    )
+    op.create_index(
+        "idx_predictions_target",
+        "predictions",
+        ["target_time_ms", "settled"],
+        unique=False,
+    )
     op.create_table(
         "prices",
         sa.Column("timestamp", sa.TIMESTAMP(timezone=True), nullable=False),
@@ -89,7 +96,9 @@ def upgrade() -> None:
         sa.Column("session_id", sa.Text(), nullable=True),
         sa.PrimaryKeyConstraint("trade_id"),
     )
-    op.create_index("idx_trades_session_ts", "trades", ["session_id", "timestamp"], unique=False)
+    op.create_index(
+        "idx_trades_session_ts", "trades", ["session_id", "timestamp"], unique=False
+    )
     op.create_index("idx_trades_ts", "trades", ["timestamp"], unique=False)
 
 
