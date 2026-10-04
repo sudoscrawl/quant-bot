@@ -183,38 +183,94 @@ class DB:
 
     @staticmethod
     def insert_trade_from_order(
-        order_result: Mapping[str, Any], mode: str, session_id: str | None = None
+        order_result: Mapping[str, Any],
+        mode: str = "LIVE",
+        session_id: str | None = None,
+        fallback_pair: str = "",
+        fallback_side: str = "",
+        fallback_price: float = 0.0,
+        fallback_qty: float = 0.0,
     ) -> None:
-        """Persist a trade from a ``place_order`` API or paper-trading response."""
-        detail = order_result.get("OrderDetail", order_result)
+        """Persist a trade from a ``place_order`` API response."""
+        detail = order_result.get(
+            "OrderDetail", order_result.get("order_detail", order_result)
+        )
         if not isinstance(detail, Mapping):
-            return
-        pair = str(detail.get("Pair", ""))
-        side = str(detail.get("Side", ""))
+            detail = order_result
+
+        pair = str(
+            detail.get("Pair")
+            or detail.get("pair")
+            or order_result.get("Pair")
+            or order_result.get("pair")
+            or fallback_pair
+        )
+        side = str(
+            detail.get("Side")
+            or detail.get("side")
+            or order_result.get("Side")
+            or order_result.get("side")
+            or fallback_side
+        )
         quantity = float(
             detail.get("FilledQuantity")
             or detail.get("Quantity")
+            or detail.get("quantity")
             or detail.get("ShortQty")
-            or 0
+            or order_result.get("Quantity")
+            or fallback_qty
+            or 0.0
         )
         price = float(
             detail.get("FilledAverPrice")
+            or detail.get("filled_aver_price")
+            or detail.get("AvgPrice")
+            or detail.get("avg_price")
             or detail.get("Price")
+            or detail.get("price")
             or detail.get("EntryPrice")
-            or 0
+            or order_result.get("Price")
+            or fallback_price
+            or 0.0
         )
-        fee = float(detail.get("CommissionChargeValue") or detail.get("OpenFee") or 0)
-        if pair and quantity and price:
+        fee = float(
+            detail.get("CommissionChargeValue")
+            or detail.get("OpenFee")
+            or detail.get("fee")
+            or detail.get("Fee")
+            or 0.0
+        )
+        order_id = str(
+            detail.get("OrderID")
+            or detail.get("order_id")
+            or detail.get("ID")
+            or detail.get("id")
+            or order_result.get("OrderID")
+            or ""
+        )
+        status = str(
+            detail.get("Status")
+            or detail.get("status")
+            or order_result.get("Status")
+            or "FILLED"
+        )
+        ts = (
+            detail.get("CreateTimestamp")
+            or detail.get("timestamp")
+            or order_result.get("timestamp")
+        )
+
+        if pair and quantity > 0 and price > 0:
             DB.insert_trade(
                 pair=pair,
-                side=side,
+                side=side.upper(),
                 quantity=quantity,
                 price=price,
                 fee=fee,
                 mode=mode,
-                order_id=str(detail.get("OrderID") or detail.get("ID") or ""),
-                status=str(detail.get("Status", "FILLED")),
-                timestamp_ms=detail.get("CreateTimestamp"),
+                order_id=order_id,
+                status=status,
+                timestamp_ms=ts,
                 session_id=session_id,
             )
 

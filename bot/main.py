@@ -73,13 +73,16 @@ def _select_tracked_symbols(
     if exchange_info and isinstance(exchange_info, Mapping):
         pairs_info = exchange_info.get("TradePairs", {})
         if isinstance(pairs_info, Mapping) and pairs_info:
-            valid_pairs = valid_pairs.intersection(set(pairs_info.keys())) or valid_pairs
+            valid_pairs = (
+                valid_pairs.intersection(set(pairs_info.keys())) or valid_pairs
+            )
 
     if getattr(config, "track_all_coins", True):
         # Track every single active coin listed on the exchange (~88 pairs)
         return sorted(
             [
-                p for p in valid_pairs
+                p
+                for p in valid_pairs
                 if float(tickers.get(p, {}).get("LastPrice", 0.0)) > 0
             ],
             key=lambda p: float(tickers.get(p, {}).get("UnitTradeValue", 0.0)),
@@ -88,7 +91,8 @@ def _select_tracked_symbols(
 
     # 1. Start with configured symbols that are actively trading
     selected: list[str] = [
-        s for s in config.symbols
+        s
+        for s in config.symbols
         if s in valid_pairs and float(tickers.get(s, {}).get("LastPrice", 0.0)) > 0
     ]
 
@@ -101,7 +105,10 @@ def _select_tracked_symbols(
             reverse=True,
         )
         for p in sorted_pairs:
-            if p not in selected and float(tickers.get(p, {}).get("LastPrice", 0.0)) > 0:
+            if (
+                p not in selected
+                and float(tickers.get(p, {}).get("LastPrice", 0.0)) > 0
+            ):
                 selected.append(p)
             if len(selected) >= target_count:
                 break
@@ -165,15 +172,45 @@ def _score_opportunity(
 
 
 def _load_positions(
-    strategy: MomentumStrategy, balance: Mapping[str, object]
+    strategy: MomentumStrategy,
+    balance: Mapping[str, object],
+    tickers: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict[str, float]:
+    """Load active positions from DB and adopt any pre-existing wallet holdings."""
     saved = json.loads(DB.get_state("bot_positions", "{}") or "{}")
     active: dict[str, float] = {}
+
+    # 1. Restore previously tracked bot positions
     for pair, entry_price in saved.items():
         asset = pair.split("/", 1)[0]
         if free_balance(dict(balance), asset) > 0:
             active[pair] = float(entry_price)
             strategy.notify_bought(pair, float(entry_price))
+
+    # 2. Adopt any pre-existing non-USD coins in the wallet
+    wallet = balance.get("SpotWallet") or balance.get("Wallet") or {}
+    if isinstance(wallet, Mapping) and tickers:
+        for asset, amounts in wallet.items():
+            if asset.upper() == "USD":
+                continue
+            pair = f"{asset.upper()}/USD"
+            if pair in active:
+                continue
+            free_qty = (
+                float(amounts.get("Free", 0.0)) if isinstance(amounts, Mapping) else 0.0
+            )
+            if free_qty > 0 and pair in tickers:
+                current_price = float(tickers[pair].get("LastPrice", 0.0))
+                if current_price > 0:
+                    active[pair] = current_price
+                    strategy.notify_bought(pair, current_price)
+                    logger.info(
+                        "Adopted pre-existing wallet holding %s (qty=%s) @ $%.4f",
+                        pair,
+                        free_qty,
+                        current_price,
+                    )
+
     return active
 
 
@@ -194,9 +231,7 @@ def _save_state(
     """Persist comprehensive operational bot state to the database."""
     now_iso = datetime.now(UTC).isoformat()
     peak_eq = max(risk.peak_equity, equity)
-    drawdown_pct = (
-        round((peak_eq - equity) / peak_eq * 100, 2) if peak_eq > 0 else 0.0
-    )
+    drawdown_pct = round((peak_eq - equity) / peak_eq * 100, 2) if peak_eq > 0 else 0.0
 
     bot_state = {
         "status": "HALTED" if risk.halted else "RUNNING",
@@ -266,16 +301,12 @@ def run() -> None:
         risk = RiskManager(
             portfolio_value_usd(initial_balance, initial_tickers), config
         )
-        positions = _load_positions(strategy, initial_balance)
+        positions = _load_positions(strategy, initial_balance, initial_tickers)
 
         # Bulk restore history for all tracked symbols from DB in a single query
-        history_bulk = DB.get_recent_prices_bulk(
-            initial_tracked, config.min_history
-        )
+        history_bulk = DB.get_recent_prices_bulk(initial_tracked, config.min_history)
         for pair in initial_tracked:
-            pair_prices = [
-                float(row["price"]) for row in history_bulk.get(pair, [])
-            ]
+            pair_prices = [float(row["price"]) for row in history_bulk.get(pair, [])]
             strategy.restore(pair, pair_prices)
 
         logger.info(
@@ -321,7 +352,15 @@ def run() -> None:
                             result = client.place_order(pair, "SELL", quantity)
                             if _accepted(result, pair, "SELL"):
                                 fill = _filled_price(result, price)
-                                DB.insert_trade_from_order(result, "LIVE", session_id)
+                                DB.insert_trade_from_order(
+                                    result,
+                                    mode="LIVE",
+                                    session_id=session_id,
+                                    fallback_pair=pair,
+                                    fallback_side="SELL",
+                                    fallback_price=fill,
+                                    fallback_qty=quantity,
+                                )
                                 strategy.notify_sold(pair, fill < positions[pair])
                                 positions.pop(pair, None)
                                 _save_positions(positions)
@@ -389,12 +428,20 @@ def run() -> None:
                             result = client.place_order(pair, "BUY", quantity)
                             if _accepted(result, pair, "BUY"):
                                 fill = _filled_price(result, price)
-                                DB.insert_trade_from_order(result, "LIVE", session_id)
+                                DB.insert_trade_from_order(
+                                    result,
+                                    mode="LIVE",
+                                    session_id=session_id,
+                                    fallback_pair=pair,
+                                    fallback_side="BUY",
+                                    fallback_price=fill,
+                                    fallback_qty=quantity,
+                                )
                                 strategy.notify_bought(pair, fill)
                                 positions[pair] = fill
                                 _save_positions(positions)
-                                available_usd -= quantity * fill * (
-                                    1 + config.commission_rate
+                                available_usd -= (
+                                    quantity * fill * (1 + config.commission_rate)
                                 )
                                 cycle_buys.append(pair)
                                 logger.info(

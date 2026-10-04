@@ -51,15 +51,13 @@ class Config(BaseSettings):
     max_open_positions: int = Field(default=8, alias="MAX_OPEN_POSITIONS")
     min_symbols_tracked: int = Field(default=15, alias="MIN_SYMBOLS_TRACKED")
     track_all_coins: bool = Field(default=True, alias="TRACK_ALL_COINS")
-    auto_select_top_symbols: bool = Field(
-        default=True, alias="AUTO_SELECT_TOP_SYMBOLS"
-    )
+    auto_select_top_symbols: bool = Field(default=True, alias="AUTO_SELECT_TOP_SYMBOLS")
 
     # Momentum strategy: intentionally a little more aggressive than the reference bot.
     fast_ema_period: int = Field(default=6, alias="FAST_EMA_PERIOD")
     slow_ema_period: int = Field(default=18, alias="SLOW_EMA_PERIOD")
     rsi_period: int = Field(default=14, alias="RSI_PERIOD")
-    min_history: int = Field(default=40, alias="MIN_HISTORY")
+    min_history: int = Field(default=20, alias="MIN_HISTORY")
     rsi_buy_min: float = Field(default=42.0, alias="RSI_BUY_MIN")
     rsi_buy_max: float = Field(default=62.0, alias="RSI_BUY_MAX")
     rsi_sell_min: float = Field(default=43.0, alias="RSI_SELL_MIN")
@@ -111,5 +109,6 @@ class Config(BaseSettings):
             )
         if not self.api_key or not self.api_secret:
             raise RuntimeError("API_KEY and API_SECRET must be set for live execution.")
+
 
 config = Config()

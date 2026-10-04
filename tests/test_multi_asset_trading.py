@@ -18,7 +18,9 @@ def test_select_tracked_symbols_tracks_all_exchange_coins():
         for i in range(88)
     }
     mock_exchange_info = {
-        "TradePairs": {f"COIN{i}/USD": {"AmountPrecision": 4, "MiniOrder": 1.0} for i in range(88)}
+        "TradePairs": {
+            f"COIN{i}/USD": {"AmountPrecision": 4, "MiniOrder": 1.0} for i in range(88)
+        }
     }
 
     selected = _select_tracked_symbols(mock_exchange_info, mock_tickers)
@@ -36,7 +38,9 @@ def test_select_tracked_symbols_selects_at_least_15_coins():
         for i in range(25)
     }
     mock_exchange_info = {
-        "TradePairs": {f"COIN{i}/USD": {"AmountPrecision": 4, "MiniOrder": 1.0} for i in range(25)}
+        "TradePairs": {
+            f"COIN{i}/USD": {"AmountPrecision": 4, "MiniOrder": 1.0} for i in range(25)
+        }
     }
 
     selected = _select_tracked_symbols(mock_exchange_info, mock_tickers, min_count=15)
@@ -55,7 +59,9 @@ def test_score_opportunity_ranks_stronger_momentum_higher():
         "Change": 0.08,
         "UnitTradeValue": 500_000.0,
     }
-    strong_score = _score_opportunity("BTC/USD", strong_indicators, strong_ticker, volatility=1.5)
+    strong_score = _score_opportunity(
+        "BTC/USD", strong_indicators, strong_ticker, volatility=1.5
+    )
 
     # Weak momentum
     weak_indicators = {"warming_up": False, "ema_sep_pct": 0.005, "rsi": 35.0}
@@ -66,7 +72,9 @@ def test_score_opportunity_ranks_stronger_momentum_higher():
         "Change": -0.05,
         "UnitTradeValue": 1_000.0,
     }
-    weak_score = _score_opportunity("WEAK/USD", weak_indicators, weak_ticker, volatility=0.5)
+    weak_score = _score_opportunity(
+        "WEAK/USD", weak_indicators, weak_ticker, volatility=0.5
+    )
 
     assert strong_score > weak_score
     assert strong_score > 0.0
@@ -105,3 +113,28 @@ def test_save_state_persists_to_db():
     assert "tracked_symbols" in all_state
     assert "top_candidates" in all_state
     assert "last_cycle_summary" in all_state
+
+
+def test_load_positions_adopts_pre_existing_wallet_holdings():
+    from bot.main import _load_positions
+    from bot.strategy import MomentumStrategy
+
+    strategy = MomentumStrategy(config)
+    # Wallet holding BTC and ETH purchased before starting bot
+    balance = {
+        "SpotWallet": {
+            "USD": {"Free": 10000.0, "Lock": 0.0},
+            "BTC": {"Free": 0.5, "Lock": 0.0},
+            "ETH": {"Free": 4.0, "Lock": 0.0},
+        }
+    }
+    tickers = {
+        "BTC/USD": {"LastPrice": 65000.0},
+        "ETH/USD": {"LastPrice": 3400.0},
+    }
+
+    positions = _load_positions(strategy, balance, tickers)
+    assert "BTC/USD" in positions
+    assert "ETH/USD" in positions
+    assert positions["BTC/USD"] == 65000.0
+    assert positions["ETH/USD"] == 3400.0
