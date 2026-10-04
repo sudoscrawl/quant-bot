@@ -22,6 +22,65 @@ class RoostooClient:
         )
         self.client = httpx.Client(base_url=self.base_url, timeout=timeout)
 
+        # Sync with the exchange clock so signed requests aren't rejected
+        # when the local clock drifts beyond the 60-second tolerance.
+        self._time_offset_ms: int = 0
+        self._sync_clock()
+
+    def _log_event(self, endpoint: str, success: bool, message: str) -> None:
+        """Record an API event to the database, ignoring logging errors."""
+        try:
+            from bot.services.db_queries import DB
+
+            DB.log_api_event(endpoint=endpoint, success=success, message=message)
+        except Exception:
+            pass
+
+    def _request(self, method: str, endpoint: str, **kwargs) -> httpx.Response:
+        """Execute an HTTP request and log the API event to the database."""
+        try:
+            if method.upper() == "GET":
+                response = self.client.get(endpoint, **kwargs)
+            elif method.upper() == "POST":
+                response = self.client.post(endpoint, **kwargs)
+            else:
+                response = self.client.request(method, endpoint, **kwargs)
+
+            success = response.is_success
+            msg = f"HTTP {response.status_code}"
+            if success:
+                try:
+                    data = response.json()
+                    if isinstance(data, dict) and not data.get("Success", True):
+                        success = False
+                        msg += f" - {data.get('ErrMsg', 'Exchange error')}"
+                except Exception:
+                    pass
+            else:
+                msg += f": {response.text[:200]}"
+
+            self._log_event(endpoint, success, msg)
+            response.raise_for_status()
+            return response
+        except Exception as exc:
+            if not isinstance(exc, httpx.HTTPStatusError):
+                self._log_event(endpoint, False, str(exc)[:255])
+            raise
+
+    def _sync_clock(self) -> None:
+        """Fetch the server time and compute the offset from the local clock."""
+        try:
+            local_before = int(time.time() * 1000)
+            resp = self._request("GET", "/v3/serverTime")
+            server_time = resp.json()["ServerTime"]
+            local_after = int(time.time() * 1000)
+            # Use the midpoint of the round-trip to estimate one-way latency.
+            local_mid = (local_before + local_after) // 2
+            self._time_offset_ms = server_time - local_mid
+        except Exception:
+            # If the time-sync request fails, fall back to local time.
+            self._time_offset_ms = 0
+
     def _generate_signature(self, params: dict) -> str:
         """Create an HMAC-SHA256 hex signature over sorted query params."""
         query_string = "&".join(f"{k}={params[k]}" for k in sorted(params.keys()))
@@ -38,21 +97,18 @@ class RoostooClient:
             "MSG-SIGNATURE": self._generate_signature(params),
         }
 
-    @staticmethod
-    def _timestamp_ms() -> int:
-        """Return the current UNIX timestamp in milliseconds."""
-        return int(time.time() * 1000)
+    def _timestamp_ms(self) -> int:
+        """Return the current UNIX timestamp in milliseconds, adjusted for server clock drift."""
+        return int(time.time() * 1000) + self._time_offset_ms
 
     def ping(self) -> dict:
         """Get the server time from the Roostoo API to verify connectivity."""
-        response = self.client.get("/v3/serverTime")
-        response.raise_for_status()
+        response = self._request("GET", "/v3/serverTime")
         return response.json()
 
     def get_exchange_info(self) -> dict:
         """Get exchange information (trading rules, symbol list, etc.)."""
-        response = self.client.get("/v3/exchangeInfo")
-        response.raise_for_status()
+        response = self._request("GET", "/v3/exchangeInfo")
         return response.json()
 
     def get_ticker(self, pair: str | None = None) -> dict:
@@ -61,19 +117,18 @@ class RoostooClient:
         if pair is not None:
             params["pair"] = pair
 
-        response = self.client.get("/v3/ticker", params=params)
-        response.raise_for_status()
+        response = self._request("GET", "/v3/ticker", params=params)
         return response.json()
 
     def get_balance(self) -> dict:
         """Get account balances for all assets."""
         params = {"timestamp": self._timestamp_ms()}
-        response = self.client.get(
+        response = self._request(
+            "GET",
             "/v3/balance",
             params=params,
             headers=self._auth_headers(params),
         )
-        response.raise_for_status()
         return response.json()
 
     def place_order(
@@ -104,12 +159,12 @@ class RoostooClient:
             payload["type"] = "LIMIT"
             payload["price"] = price
 
-        response = self.client.post(
+        response = self._request(
+            "POST",
             "/v3/place_order",
             data=payload,
             headers=self._auth_headers(payload),
         )
-        response.raise_for_status()
         return response.json()
 
     def cancel_order(
@@ -125,12 +180,12 @@ class RoostooClient:
         if order_id is not None:
             payload["order_id"] = order_id
 
-        response = self.client.post(
+        response = self._request(
+            "POST",
             "/v3/cancel_order",
             data=payload,
             headers=self._auth_headers(payload),
         )
-        response.raise_for_status()
         return response.json()
 
     def query_order(
@@ -154,23 +209,23 @@ class RoostooClient:
         if pending_only is not None:
             payload["pending_only"] = pending_only
 
-        response = self.client.post(
+        response = self._request(
+            "POST",
             "/v3/query_order",
             data=payload,
             headers=self._auth_headers(payload),
         )
-        response.raise_for_status()
         return response.json()
 
     def get_pending_count(self) -> dict:
         """Get the number of pending orders."""
         params = {"timestamp": self._timestamp_ms()}
-        response = self.client.get(
+        response = self._request(
+            "GET",
             "/v3/pending_count",
             params=params,
             headers=self._auth_headers(params),
         )
-        response.raise_for_status()
         return response.json()
 
     def close(self) -> None:

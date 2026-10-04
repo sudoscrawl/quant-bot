@@ -70,34 +70,54 @@ class DB:
             return state.value if state is not None else default
 
     @staticmethod
+    def get_all_state() -> dict[str, str]:
+        with session_maker() as session:
+            rows = session.scalars(select(State)).all()
+            return {row.key: row.value for row in rows}
+
+    @staticmethod
+    def set_multiple_states(states: Mapping[str, str]) -> None:
+        with session_maker.begin() as session:
+            keys = list(states.keys())
+            existing = {
+                row.key: row
+                for row in session.scalars(
+                    select(State).where(State.key.in_(keys))
+                ).all()
+            }
+            for key, value in states.items():
+                if key in existing:
+                    existing[key].value = value
+                else:
+                    session.add(State(key=key, value=value))
+
+    @staticmethod
     def insert_prices(
         tickers: Mapping[str, Mapping[str, Any]],
         timestamp_ms: int | datetime | None = None,
     ) -> None:
-        """Insert one price snapshot, ignoring duplicate ``(timestamp, pair)`` rows."""
+        """Insert one price snapshot for all tracked tickers in a single batch."""
         timestamp = _timestamp(timestamp_ms)
         with session_maker.begin() as session:
+            rows = []
             for pair, ticker in tickers.items():
                 bid = float(ticker.get("MaxBid", 0.0))
                 ask = float(ticker.get("MinAsk", 0.0))
                 price = float(ticker.get("LastPrice", 0.0))
                 spread_bps = (ask - bid) / price * 10_000 if price > 0 else 0.0
-
-                # The legacy query used INSERT OR IGNORE.  Check the ORM identity
-                # first to retain that behaviour without dialect-specific SQL.
-                if session.get(Prices, (timestamp, pair)) is None:
-                    session.add(
-                        Prices(
-                            timestamp=timestamp,
-                            pair=pair,
-                            price=price,
-                            bid=bid,
-                            ask=ask,
-                            change_24h=float(ticker.get("Change", 0.0)),
-                            unit_trade_value=float(ticker.get("UnitTradeValue", 0.0)),
-                            spread_bps=round(spread_bps, 4),
-                        )
+                rows.append(
+                    Prices(
+                        timestamp=timestamp,
+                        pair=pair,
+                        price=price,
+                        bid=bid,
+                        ask=ask,
+                        change_24h=float(ticker.get("Change", 0.0)),
+                        unit_trade_value=float(ticker.get("UnitTradeValue", 0.0)),
+                        spread_bps=round(spread_bps, 4),
                     )
+                )
+            session.add_all(rows)
 
     @staticmethod
     def get_prices(pair: str, limit: int = 100) -> list[dict[str, Any]]:
@@ -109,6 +129,25 @@ class DB:
                 .limit(limit)
             ).all()
             return [_price_dict(price) for price in prices]
+
+    @staticmethod
+    def get_recent_prices_bulk(
+        pairs: list[str], limit_per_pair: int = 40
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Fetch recent price snapshots for multiple pairs in one query."""
+        result: dict[str, list[dict[str, Any]]] = {p: [] for p in pairs}
+        if not pairs:
+            return result
+        with session_maker() as session:
+            prices = session.scalars(
+                select(Prices)
+                .where(Prices.pair.in_(pairs))
+                .order_by(Prices.timestamp.desc())
+            ).all()
+            for price in prices:
+                if len(result.get(price.pair, [])) < limit_per_pair:
+                    result.setdefault(price.pair, []).append(_price_dict(price))
+        return result
 
     @staticmethod
     def insert_trade(

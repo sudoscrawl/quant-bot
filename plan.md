@@ -10,7 +10,7 @@
 
 ## Before enabling live execution
 
-- [ ] Create the database schema: `python -c 'from bot.main import Base, engine; Base.metadata.create_all(engine)'`.
+- [ ] Create/upgrade the database schema: `./.venv/bin/alembic upgrade head`.
 - [ ] Set `API_KEY`, `API_SECRET`, and `LIVE_TRADING_ENABLED=true` in `.env`.
 - [ ] Confirm `EXCHANGE_BASE_URL`, permitted symbols, minimum order sizes, and account balances.
 - [ ] Review the values in `bot/config.py`, especially allocation, stop loss, and max drawdown.

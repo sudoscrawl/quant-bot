@@ -1,7 +1,5 @@
 """The application's only configuration surface."""
 
-from pathlib import Path
-
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -10,21 +8,52 @@ class Config(BaseSettings):
     # Exchange / persistence
     api_key: str = Field(default="", alias="API_KEY")
     api_secret: str = Field(default="", alias="API_SECRET")
-    db_url: str = Field(default="sqlite:///data/quant_bot.sqlite3", alias="DB_URL")
+    db_url: str = Field(
+        default="postgresql+psycopg://quant_bot:quant_bot@localhost:5432/quant_bot",
+        alias="DB_URL",
+    )
     exchange_base_url: str = Field(
         default="https://mock-api.roostoo.com", alias="EXCHANGE_BASE_URL"
     )
     request_timeout_seconds: float = Field(
         default=10.0, alias="REQUEST_TIMEOUT_SECONDS"
     )
+    log_file: str = Field(default="logs/quant-bot.log", alias="LOG_FILE")
 
     # Live execution. There is deliberately no paper-trading mode.
     live_trading_enabled: bool = Field(default=False, alias="LIVE_TRADING_ENABLED")
     poll_interval_seconds: int = Field(default=60, alias="POLL_INTERVAL_SECONDS")
     symbols: tuple[str, ...] = Field(
-        default=("BTC/USD", "ETH/USD", "SOL/USD", "BNB/USD"), alias="SYMBOLS"
+        default=(
+            "BTC/USD",
+            "ETH/USD",
+            "SOL/USD",
+            "BNB/USD",
+            "DOGE/USD",
+            "XRP/USD",
+            "ADA/USD",
+            "AVAX/USD",
+            "SUI/USD",
+            "NEAR/USD",
+            "LINK/USD",
+            "DOT/USD",
+            "LTC/USD",
+            "UNI/USD",
+            "APT/USD",
+            "AAVE/USD",
+            "PEPE/USD",
+            "SHIB/USD",
+            "TON/USD",
+            "TRX/USD",
+        ),
+        alias="SYMBOLS",
     )
-    max_open_positions: int = Field(default=4, alias="MAX_OPEN_POSITIONS")
+    max_open_positions: int = Field(default=8, alias="MAX_OPEN_POSITIONS")
+    min_symbols_tracked: int = Field(default=15, alias="MIN_SYMBOLS_TRACKED")
+    track_all_coins: bool = Field(default=True, alias="TRACK_ALL_COINS")
+    auto_select_top_symbols: bool = Field(
+        default=True, alias="AUTO_SELECT_TOP_SYMBOLS"
+    )
 
     # Momentum strategy: intentionally a little more aggressive than the reference bot.
     fast_ema_period: int = Field(default=6, alias="FAST_EMA_PERIOD")
@@ -57,6 +86,14 @@ class Config(BaseSettings):
         extra="ignore",
     )
 
+    @field_validator("db_url", mode="before")
+    @classmethod
+    def use_psycopg_driver(cls, value: str) -> str:
+        """Accept standard PostgreSQL/Neon URLs while selecting psycopg explicitly."""
+        if value.startswith("postgresql://"):
+            return value.replace("postgresql://", "postgresql+psycopg://", 1)
+        return value
+
     @field_validator("symbols", mode="before")
     @classmethod
     def split_symbols(cls, value: str | tuple[str, ...] | list[str]) -> tuple[str, ...]:
@@ -74,15 +111,5 @@ class Config(BaseSettings):
             )
         if not self.api_key or not self.api_secret:
             raise RuntimeError("API_KEY and API_SECRET must be set for live execution.")
-
-    @property
-    def sqlite_path(self) -> Path | None:
-        prefix = "sqlite:///"
-        return (
-            Path(self.db_url.removeprefix(prefix))
-            if self.db_url.startswith(prefix)
-            else None
-        )
-
 
 config = Config()
