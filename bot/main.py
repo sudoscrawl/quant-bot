@@ -1,3 +1,5 @@
+"""Live execution loop. Run with ``python -m bot.main`` after configuration."""
+
 import json
 import logging
 import signal
@@ -39,18 +41,11 @@ def _filled_price(order: Mapping[str, object], fallback: float) -> float:
 
 
 def _signal_strength(indicators: Mapping[str, object]) -> float:
-    """
-    Compute signal conviction in [0, 1] based on EMA separation and RSI position.
-
-    Normalisation is calibrated to the v2 strategy parameters:
-      - EMA separation: meaningful at 0.05%, strong at 0.20%  → normalise over 0.20%
-      - RSI optimal midpoint: 51.5 (centre of 45–58 buy zone)  → penalise distance / 13
-    """
     separation = abs(float(indicators.get("ema_sep_pct", 0.0)))
     rsi_value = float(indicators.get("rsi", 50.0))
-    ema_score = min(1.0, separation / 0.20)
-    rsi_score = max(0.0, 1.0 - abs(rsi_value - 51.5) / 13.0)
-    return round(ema_score * 0.60 + rsi_score * 0.40, 4)
+    return min(
+        1.0, separation / 0.12 * 0.6 + max(0.0, 1 - abs(rsi_value - 52) / 20) * 0.4
+    )
 
 
 def _volatility_pct(pair: str, prices: list[float] | None = None) -> float:
@@ -68,6 +63,7 @@ def _volatility_pct(pair: str, prices: list[float] | None = None) -> float:
     return sum(returns) / len(returns) if returns else 1.0
 
 
+<<<<<<< HEAD
 def _detect_market_state(
     tickers: Mapping[str, Mapping[str, Any]],
     strategy: MomentumStrategy,
@@ -235,6 +231,8 @@ def _apply_market_state(
     return new_state
 
 
+=======
+>>>>>>> parent of 7d70ca2 (feat: new strategy implementations)
 def _select_tracked_symbols(
     exchange_info: Mapping[str, Any],
     tickers: Mapping[str, Mapping[str, Any]],
@@ -250,6 +248,7 @@ def _select_tracked_symbols(
             )
 
     if getattr(config, "track_all_coins", True):
+        # Track every single active coin listed on the exchange (~88 pairs)
         return sorted(
             [
                 p
@@ -260,11 +259,14 @@ def _select_tracked_symbols(
             reverse=True,
         )
 
+    # 1. Start with configured symbols that are actively trading
     selected: list[str] = [
         s
         for s in config.symbols
         if s in valid_pairs and float(tickers.get(s, {}).get("LastPrice", 0.0)) > 0
     ]
+
+    # 2. Ensure we have at least `min_count` coins by adding highest USD-volume pairs
     target_count = max(min_count, len(config.symbols))
     if len(selected) < target_count or getattr(config, "auto_select_top_symbols", True):
         sorted_pairs = sorted(
@@ -290,14 +292,7 @@ def _score_opportunity(
     ticker: Mapping[str, Any],
     volatility: float,
 ) -> float:
-    """
-    Calculate a money-making opportunity score (higher = higher profit potential).
-
-    Calibrated to v2 strategy parameters (RSI zone 45–58, EMA sep ≥ 0.05%):
-      - EMA trend: rewards separation above the 0.05% threshold
-      - RSI zone:  optimal centre at 51.5 (midpoint of 45–58 zone)
-      - Volatility: modest upside is fine; extreme volatility is penalised
-    """
+    """Calculate a money-making opportunity score (higher = higher profit potential)."""
     if indicators.get("warming_up", False):
         return 0.0
 
@@ -312,15 +307,26 @@ def _score_opportunity(
     if price <= 0:
         return 0.0
 
+    # 1. EMA trend strength (positive separation is rewarded)
     trend_factor = max(0.1, 1.0 + ema_sep * 10.0)
-    rsi_factor = max(0.1, 1.0 - abs(rsi_val - 51.5) / 13.0)
-    change_factor = max(0.2, 1.0 + (min(max(change_24h, -20.0), 20.0) / 15.0))
+
+    # 2. RSI momentum positioning (optimal zone: 45 to 65)
+    rsi_factor = max(0.1, 1.0 - abs(rsi_val - 55.0) / 30.0)
+
+    # 3. 24h momentum (rewards positive trend)
+    change_factor = max(0.2, 1.0 + (change_24h / 15.0))
+
+    # 4. Volume / Liquidity factor
     volume_factor = (
         min(2.5, max(0.5, (unit_trade_val / 20_000.0) ** 0.25))
         if unit_trade_val > 0
         else 0.5
     )
-    vol_factor = min(1.8, max(0.5, volatility / 1.5))
+
+    # 5. Volatility / Upside potential
+    vol_factor = min(2.0, max(0.6, volatility / 1.2))
+
+    # 6. Spread penalty (penalize wide bid-ask spreads)
     spread_bps = (ask - bid) / price * 10_000 if price > 0 else 0.0
     spread_factor = max(0.3, 1.0 - (spread_bps / 150.0))
 
@@ -344,12 +350,14 @@ def _load_positions(
     saved = json.loads(DB.get_state("bot_positions", "{}") or "{}")
     active: dict[str, float] = {}
 
+    # 1. Restore previously tracked bot positions
     for pair, entry_price in saved.items():
         asset = pair.split("/", 1)[0]
         if free_balance(dict(balance), asset) > 0:
             active[pair] = float(entry_price)
             strategy.notify_bought(pair, float(entry_price))
 
+    # 2. Adopt any pre-existing non-USD coins in the wallet
     wallet = balance.get("SpotWallet") or balance.get("Wallet") or {}
     if isinstance(wallet, Mapping) and tickers:
         for asset, amounts in wallet.items():
@@ -445,7 +453,6 @@ def run() -> None:
     assert_schema_current()
     client, strategy = RoostooClient(), MomentumStrategy(config)
     running, session_id = True, str(uuid.uuid4())
-    last_market_state: str | None = None
 
     def stop(*_: object) -> None:
         nonlocal running
@@ -466,34 +473,16 @@ def run() -> None:
         )
         positions = _load_positions(strategy, initial_balance, initial_tickers)
 
-        # Bulk restore price history from DB.
-        # Fetch up to 4× min_history rows so the EMA/RSI context is fully
-        # saturated from the first live tick; min_history alone (25) is just
-        # barely enough and leaves most coins in warmup after a restart.
-        restore_limit = max(config.min_history * 4, 100)
-        history_bulk = DB.get_recent_prices_bulk(initial_tracked, restore_limit)
+        # Bulk restore history for all tracked symbols from DB in a single query
+        history_bulk = DB.get_recent_prices_bulk(initial_tracked, config.min_history)
         for pair in initial_tracked:
             pair_prices = [float(row["price"]) for row in history_bulk.get(pair, [])]
-            if pair_prices:
-                strategy.restore(pair, pair_prices)
-                # Clean slate: restore() set state.restored = True which already
-                # blocks the first live signal; also explicitly zero out position
-                # tracking so a stale DB snapshot can't inject a phantom SELL.
-                st = strategy._state(pair)
-                if pair not in positions:
-                    st.entry_price = 0.0
-                    st.hold_cycles = 0
-                    st.last_signal = "HOLD"
+            strategy.restore(pair, pair_prices)
 
-        warmed_count = sum(
-            1
-            for p in initial_tracked
-            if not strategy.indicators(p).get("warming_up", False)
-        )
         logger.info(
-            "Bot initialised: %d tracked coins (%d warmed), %d open positions",
+            "Bot initialized with %d tracked coins (min required: %d). Open positions: %d",
             len(initial_tracked),
-            warmed_count,
+            config.min_symbols_tracked,
             len(positions),
         )
 
@@ -512,24 +501,17 @@ def run() -> None:
                 DB.insert_equity(equity)
                 available_usd = free_balance(balance, "USD")
 
-                # ── Adaptive market-state detection ──────────────────────
-                # Runs every cycle once ≥80% of pairs are warmed up.
-                # Tunes RSI zone, EMA separation, stop/target thresholds.
-                market = _detect_market_state(tickers, strategy, tracked_symbols)
-                last_market_state = _apply_market_state(
-                    strategy, market, last_market_state
-                )
-
                 cycle_sells: list[str] = []
                 cycle_buys: list[str] = []
                 candidates: list[dict[str, Any]] = []
 
-                # ── 1. Process held positions ─────────────────────────────
+                # 1. Process SELL signals for currently held positions
                 for pair in list(positions.keys()):
                     if pair not in selected:
                         continue
                     ticker = selected[pair]
                     price = float(ticker.get("LastPrice", 0.0))
+<<<<<<< HEAD
                     entry_price = positions[pair]
 
                     # ── Trailing stop ─────────────────────────────────────
@@ -614,6 +596,8 @@ def run() -> None:
                             continue  # skip normal SELL check for this pair
 
                     # ── Normal strategy SELL ──────────────────────────────
+=======
+>>>>>>> parent of 7d70ca2 (feat: new strategy implementations)
                     action = strategy.update(pair, price)
                     if action == "SELL":
                         asset = pair.split("/", 1)[0]
@@ -637,13 +621,12 @@ def run() -> None:
                                 strategy.notify_sold(pair, fill < positions[pair])
                                 positions.pop(pair, None)
                                 _save_positions(positions)
-                                available_usd += quantity * fill
                                 cycle_sells.append(pair)
                                 logger.info(
                                     "LIVE SELL %s qty=%s @ %.8f", pair, quantity, fill
                                 )
 
-                # ── 2. Evaluate BUY opportunities ─────────────────────────
+                # 2. Evaluate BUY opportunities across all tracked coins not in positions
                 for pair, ticker in selected.items():
                     if pair in positions:
                         continue
@@ -666,13 +649,12 @@ def run() -> None:
                             }
                         )
 
+                # Sort candidates by money-making opportunity score (highest first)
                 candidates.sort(key=lambda c: c["score"], reverse=True)
 
-                # ── 3. Execute buys (with rotation when slots are full) ────
-                # available_slots is the primary counter; len(positions) is the
-                # authoritative hard cap checked before every order to prevent
-                # the two counts drifting apart (e.g. when _accepted returns False).
+                # 3. Trade the most profitable / highest-scoring candidate coins
                 available_slots = max(0, config.max_open_positions - len(positions))
+<<<<<<< HEAD
 
                 if not risk.halted and candidates:
                     for cand in candidates:
@@ -757,14 +739,22 @@ def run() -> None:
                         ):
                             break
 
+=======
+                if available_slots > 0 and not risk.halted and candidates:
+                    logger.info(
+                        "Found %d candidate coins. Top picks: %s",
+                        len(candidates),
+                        ", ".join(
+                            f"{c['pair']} (score: {c['score']})"
+                            for c in candidates[:available_slots]
+                        ),
+                    )
+                    for cand in candidates[:available_slots]:
+>>>>>>> parent of 7d70ca2 (feat: new strategy implementations)
                         pair = cand["pair"]
                         price = cand["price"]
                         indicators = cand["indicators"]
                         vol = cand["volatility"]
-
-                        # Skip weak signals — only trade high-conviction entries
-                        if cand["score"] < config.min_buy_score:
-                            continue
 
                         precision, exchange_minimum = _exchange_rules(
                             exchange_info, pair
@@ -797,7 +787,6 @@ def run() -> None:
                                 available_usd -= (
                                     quantity * fill * (1 + config.commission_rate)
                                 )
-                                available_slots -= 1
                                 cycle_buys.append(pair)
                                 logger.info(
                                     "LIVE BUY %s qty=%s @ %.8f (score=%.4f)",
@@ -807,10 +796,9 @@ def run() -> None:
                                     cand["score"],
                                 )
 
-                # ── 4. Save state to DB ────────────────────────────────────
+                # 4. Save state to DB
                 cycle_summary = {
                     "timestamp": datetime.now(UTC).isoformat(),
-                    "market_state": last_market_state,
                     "tracked_coins_count": len(selected),
                     "open_positions": len(positions),
                     "equity": round(equity, 4),
@@ -830,8 +818,7 @@ def run() -> None:
                 )
 
                 logger.info(
-                    "Cycle complete: state=%s  %d monitored  %d positions  equity=$%.2f",
-                    last_market_state or "WARMING",
+                    "Cycle complete: %d coins monitored, %d positions open, equity=$%.2f",
                     len(selected),
                     len(positions),
                     equity,
