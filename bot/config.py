@@ -48,7 +48,7 @@ class Config(BaseSettings):
         ),
         alias="SYMBOLS",
     )
-    max_open_positions: int = Field(default=6, alias="MAX_OPEN_POSITIONS")
+    max_open_positions: int = Field(default=10, alias="MAX_OPEN_POSITIONS")
     min_symbols_tracked: int = Field(default=15, alias="MIN_SYMBOLS_TRACKED")
     track_all_coins: bool = Field(default=True, alias="TRACK_ALL_COINS")
     auto_select_top_symbols: bool = Field(default=True, alias="AUTO_SELECT_TOP_SYMBOLS")
@@ -64,10 +64,10 @@ class Config(BaseSettings):
     rsi_sell_min: float = Field(default=45.0, alias="RSI_SELL_MIN")
     ema_separation_pct: float = Field(default=0.05, alias="EMA_SEPARATION_PCT")
     confirm_ticks: int = Field(default=3, alias="CONFIRM_TICKS")
-    min_hold_cycles: int = Field(default=6, alias="MIN_HOLD_CYCLES")
-    stagnant_exit_cycles: int = Field(default=12, alias="STAGNANT_EXIT_CYCLES")
+    min_hold_cycles: int = Field(default=4, alias="MIN_HOLD_CYCLES")
+    stagnant_exit_cycles: int = Field(default=10, alias="STAGNANT_EXIT_CYCLES")
     min_profit_pct: float = Field(default=0.25, alias="MIN_PROFIT_PCT")
-    stop_loss_pct: float = Field(default=3.0, alias="STOP_LOSS_PCT")
+    stop_loss_pct: float = Field(default=2.0, alias="STOP_LOSS_PCT")
     take_profit_pct: float = Field(default=3.0, alias="TAKE_PROFIT_PCT")
     loss_cooldown_cycles: int = Field(default=3, alias="LOSS_COOLDOWN_CYCLES")
 
@@ -75,7 +75,7 @@ class Config(BaseSettings):
     max_position_pct: float = Field(default=0.10, alias="MAX_POSITION_PCT")
     base_position_pct: float = Field(default=0.034, alias="BASE_POSITION_PCT")
     min_order_usd: float = Field(default=10.0, alias="MIN_ORDER_USD")
-    min_buy_score: float = Field(default=1.5, alias="MIN_BUY_SCORE")
+    min_buy_score: float = Field(default=0.8, alias="MIN_BUY_SCORE")
     max_drawdown_pct: float = Field(default=0.12, alias="MAX_DRAWDOWN_PCT")
     commission_rate: float = Field(default=0.001, alias="COMMISSION_RATE")
     reserve_pct: float = Field(default=0.05, alias="RESERVE_PCT")
