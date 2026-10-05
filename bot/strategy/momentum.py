@@ -132,17 +132,16 @@ class MomentumStrategy:
                 signal = "SELL"
                 logger.info("%s TAKE-PROFIT: pnl=%.2f%%", pair, pnl)
 
-            # 2. Soft stop-loss — only exit when momentum has already turned
-            #    (fast EMA below slow for ≥ 2 ticks confirms it's not a brief spike).
-            #    Avoids panic-selling a dip that's still in an uptrend.
-            elif pnl <= -cfg.stop_loss_pct and state.ticks_below_slow >= 2:
+            # 2. Hard stop-loss — exit immediately when loss exceeds threshold.
+            #    No EMA confirmation required: when you're down stop_loss_pct
+            #    the trade is simply wrong regardless of EMA position.
+            elif pnl <= -cfg.stop_loss_pct:
                 signal = "SELL"
                 state.cooldown_cycles = cfg.loss_cooldown_cycles
                 logger.warning(
-                    "%s SOFT STOP-LOSS: pnl=%.2f%% ema_below=%d ticks — cooldown %d",
+                    "%s STOP-LOSS: pnl=%.2f%% — cooldown %d",
                     pair,
                     pnl,
-                    state.ticks_below_slow,
                     cfg.loss_cooldown_cycles,
                 )
 
