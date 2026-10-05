@@ -145,18 +145,20 @@ class MomentumStrategy:
                     cfg.loss_cooldown_cycles,
                 )
 
-            # 3. EMA bearish crossover — fresh cross of fast below slow, held long
-            #    enough to not be noise, and RSI not already oversold.
-            #    No profit requirement: if momentum reversed we exit regardless.
+            # 3. EMA bearish crossover — only sell when:
+            #    - EMA has crossed down (momentum reversed)
+            #    - RSI not oversold (could bounce)
+            #    - Held long enough to not be noise
+            #    - Position is PROFITABLE — never sell at a loss on signal alone
+            #      (stop-loss handles loss exits; signal sells should lock in gains)
             elif (
                 previous_fast >= previous_slow
                 and fast < slow
                 and current_rsi >= cfg.rsi_sell_min
                 and state.hold_cycles >= cfg.min_hold_cycles
+                and pnl >= cfg.min_profit_pct
             ):
                 signal = "SELL"
-                if pnl < 0:
-                    state.cooldown_cycles = cfg.loss_cooldown_cycles
                 logger.info(
                     "%s EMA-SELL: pnl=%.2f%% cycles=%d", pair, pnl, state.hold_cycles
                 )

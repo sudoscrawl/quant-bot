@@ -1,14 +1,14 @@
 """
 Sizing and portfolio circuit-breaker for live spot orders.
 
-Sizing uses a half-Kelly formula from the trade-bot reference:
-  Kelly% = win_rate - (1 - win_rate) / win_loss_ratio
-         = 0.35 - 0.65 / 2.3 ≈ 6.8%  →  half-Kelly ≈ 3.4% (base_position_pct)
+Sizing uses 7.5% of portfolio as base (calibrated for $100k starting balance):
+  base = equity × 0.075  →  ~$7,500 per trade on $100k
 
   Adjustments applied on top of the base:
     - Signal strength [0, 1] scales size from 0.75× to 1.25× of base
     - Volatility reduces size: 1% vol → 1×, 3% vol → 0.63×, 5% vol → 0.45×
-    - Hard cap:  never more than max_position_pct (10%) of portfolio per trade
+    - Hard cap:  never more than 12% of portfolio per trade (~$12,000 on $100k)
+    - Floor:     never less than $1,000 (below this commission drag is too high)
     - Available cash reserve is always preserved
 """
 
@@ -43,25 +43,32 @@ class RiskManager:
         if self.halted or equity <= 0:
             return 0.0
 
-        # Base size: half-Kelly
+        # Base size from config (7.5% of portfolio = ~$7,500 on $100k)
         base = equity * self.settings.base_position_pct
 
         # Signal strength: scale from 0.75× (weak) to 1.25× (strong)
         signal_mult = 0.75 + min(max(signal_strength, 0.0), 1.0) * 0.50
 
         # Volatility adjustment: higher volatility → smaller position
+        # 1% vol → 1×,  3% vol → 0.63×,  5% vol → 0.45×
         vol_mult = max(0.40, 1.0 / (1.0 + max(volatility_pct, 0.0) * 0.30))
 
         size = base * signal_mult * vol_mult
 
-        # Hard cap: never exceed max_position_pct of portfolio
+        # Hard cap: never exceed 12% of portfolio per trade
+        HARD_CAP_PCT = 0.12
+        size = min(size, equity * HARD_CAP_PCT)
+
+        # Also respect config max_position_pct if it's tighter
         size = min(size, equity * self.settings.max_position_pct)
 
         # Never spend more than (available cash − reserve)
         spendable = available_usd * (1.0 - self.settings.reserve_pct)
         size = min(size, spendable)
 
-        return size if size >= self.settings.min_order_usd else 0.0
+        # Floor: below $1,000 commission drag is too high on a $100k portfolio
+        FLOOR = 1_000.0
+        return size if size >= FLOOR else 0.0
 
     def quantity(self, usd_amount: float, price: float, precision: int) -> float:
         """Convert a USD budget to a coin quantity, accounting for commission."""
