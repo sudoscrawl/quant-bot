@@ -22,7 +22,7 @@ class Config(BaseSettings):
 
     # Live execution. There is deliberately no paper-trading mode.
     live_trading_enabled: bool = Field(default=False, alias="LIVE_TRADING_ENABLED")
-    poll_interval_seconds: int = Field(default=120, alias="POLL_INTERVAL_SECONDS")
+    poll_interval_seconds: int = Field(default=60, alias="POLL_INTERVAL_SECONDS")  # 60s ticks
     symbols: tuple[str, ...] = Field(
         default=(
             "BTC/USD",
@@ -48,34 +48,35 @@ class Config(BaseSettings):
         ),
         alias="SYMBOLS",
     )
-    max_open_positions: int = Field(default=10, alias="MAX_OPEN_POSITIONS")
+    max_open_positions: int = Field(default=8, alias="MAX_OPEN_POSITIONS")
     min_symbols_tracked: int = Field(default=15, alias="MIN_SYMBOLS_TRACKED")
     track_all_coins: bool = Field(default=True, alias="TRACK_ALL_COINS")
     auto_select_top_symbols: bool = Field(default=True, alias="AUTO_SELECT_TOP_SYMBOLS")
 
-    # Momentum strategy: conservative v2 parameters aligned with trade-bot reference.
-    # Tick speed is 2 min, so at 25 ticks warmup takes ~50 minutes.
+    # Momentum strategy tuned for 60s ticks and $100k starting portfolio.
+    # At 60s ticks: 25-tick warmup = 25 min, confirm = 2 min, hold = 3 min.
     fast_ema_period: int = Field(default=8, alias="FAST_EMA_PERIOD")
     slow_ema_period: int = Field(default=21, alias="SLOW_EMA_PERIOD")
     rsi_period: int = Field(default=14, alias="RSI_PERIOD")
     min_history: int = Field(default=25, alias="MIN_HISTORY")
     rsi_buy_min: float = Field(default=45.0, alias="RSI_BUY_MIN")
-    rsi_buy_max: float = Field(default=58.0, alias="RSI_BUY_MAX")
+    rsi_buy_max: float = Field(default=60.0, alias="RSI_BUY_MAX")  # was 58, +2 room
     rsi_sell_min: float = Field(default=45.0, alias="RSI_SELL_MIN")
     ema_separation_pct: float = Field(default=0.05, alias="EMA_SEPARATION_PCT")
-    confirm_ticks: int = Field(default=3, alias="CONFIRM_TICKS")
-    min_hold_cycles: int = Field(default=4, alias="MIN_HOLD_CYCLES")
-    stagnant_exit_cycles: int = Field(default=10, alias="STAGNANT_EXIT_CYCLES")
-    min_profit_pct: float = Field(default=0.25, alias="MIN_PROFIT_PCT")
-    stop_loss_pct: float = Field(default=2.0, alias="STOP_LOSS_PCT")
-    take_profit_pct: float = Field(default=3.0, alias="TAKE_PROFIT_PCT")
-    loss_cooldown_cycles: int = Field(default=3, alias="LOSS_COOLDOWN_CYCLES")
+    confirm_ticks: int = Field(default=2, alias="CONFIRM_TICKS")   # 2 min confirm at 60s
+    min_hold_cycles: int = Field(default=3, alias="MIN_HOLD_CYCLES")   # 3 min hold
+    stagnant_exit_cycles: int = Field(default=10, alias="STAGNANT_EXIT_CYCLES")  # 10 min
+    min_profit_pct: float = Field(default=0.25, alias="MIN_PROFIT_PCT")  # above 0.20% breakeven
+    stop_loss_pct: float = Field(default=1.5, alias="STOP_LOSS_PCT")   # tighter on $100k
+    take_profit_pct: float = Field(default=2.5, alias="TAKE_PROFIT_PCT")  # quicker exits
+    loss_cooldown_cycles: int = Field(default=3, alias="LOSS_COOLDOWN_CYCLES")  # 3 min
 
-    # Risk / execution. Half-Kelly sizing with tighter drawdown guard (trade-bot reference).
+    # Risk / execution calibrated for $100k portfolio.
+    # base 7.5% = $7,500/trade; 8 slots = $60k deployed (60%); 5% reserve = $5k
     max_position_pct: float = Field(default=0.10, alias="MAX_POSITION_PCT")
-    base_position_pct: float = Field(default=0.034, alias="BASE_POSITION_PCT")
+    base_position_pct: float = Field(default=0.075, alias="BASE_POSITION_PCT")  # was 0.034
     min_order_usd: float = Field(default=10.0, alias="MIN_ORDER_USD")
-    min_buy_score: float = Field(default=0.8, alias="MIN_BUY_SCORE")
+    min_buy_score: float = Field(default=0.7, alias="MIN_BUY_SCORE")   # was 0.8
     max_drawdown_pct: float = Field(default=0.12, alias="MAX_DRAWDOWN_PCT")
     commission_rate: float = Field(default=0.001, alias="COMMISSION_RATE")
     reserve_pct: float = Field(default=0.05, alias="RESERVE_PCT")
