@@ -115,64 +115,59 @@ def _detect_market_state(
 
     params: dict[str, dict[str, float | int]] = {
         "RECOVERY": {
-            # Broadly oversold but bouncing — enter aggressively, hold patiently
             "rsi_buy_min": 38.0,
             "rsi_buy_max": 62.0,
             "ema_separation_pct": 0.02,
-            "confirm_ticks": 3,
+            "confirm_ticks": 2,
             "stop_loss_pct": 2.0,
             "take_profit_pct": 2.5,
             "min_profit_pct": 0.20,
-            "min_hold_cycles": 8,  # hold longer — early recovery needs time to develop
-            "stagnant_exit_cycles": 16,
+            "min_hold_cycles": 4,
+            "stagnant_exit_cycles": 10,
         },
         "TRENDING": {
-            # Healthy uptrend — hold the longest, let winners run
             "rsi_buy_min": 44.0,
             "rsi_buy_max": 60.0,
             "ema_separation_pct": 0.04,
             "confirm_ticks": 3,
-            "stop_loss_pct": 2.5,
+            "stop_loss_pct": 2.0,
             "take_profit_pct": 3.5,
             "min_profit_pct": 0.25,
-            "min_hold_cycles": 8,  # don't cut winners on minor EMA wiggles
-            "stagnant_exit_cycles": 25,
+            "min_hold_cycles": 4,
+            "stagnant_exit_cycles": 12,
         },
         "RANGING": {
-            # Choppy — exit faster, don't let stagnant trades tie up capital
             "rsi_buy_min": 45.0,
+            "rsi_buy_max": 56.0,
+            "ema_separation_pct": 0.05,
+            "confirm_ticks": 3,
+            "stop_loss_pct": 1.8,
+            "take_profit_pct": 2.0,
+            "min_profit_pct": 0.20,
+            "min_hold_cycles": 3,
+            "stagnant_exit_cycles": 8,
+        },
+        "OVERBOUGHT": {
+            "rsi_buy_min": 48.0,
             "rsi_buy_max": 56.0,
             "ema_separation_pct": 0.06,
             "confirm_ticks": 3,
-            "stop_loss_pct": 2.0,
-            "take_profit_pct": 2.0,
-            "min_profit_pct": 0.20,
-            "min_hold_cycles": 5,  # exit quickly on reversal in choppy market
-            "stagnant_exit_cycles": 15,
-        },
-        "OVERBOUGHT": {
-            # RSI elevated — quick exits, tight targets, fast stagnant detection
-            "rsi_buy_min": 48.0,
-            "rsi_buy_max": 56.0,
-            "ema_separation_pct": 0.08,
-            "confirm_ticks": 4,
             "stop_loss_pct": 1.5,
             "take_profit_pct": 2.0,
             "min_profit_pct": 0.15,
-            "min_hold_cycles": 4,
-            "stagnant_exit_cycles": 8,
+            "min_hold_cycles": 3,
+            "stagnant_exit_cycles": 6,
         },
         "DOWNTURN": {
-            # Majority falling — fastest exits, tightest stops
-            "rsi_buy_min": 50.0,
+            "rsi_buy_min": 48.0,
             "rsi_buy_max": 58.0,
-            "ema_separation_pct": 0.08,
-            "confirm_ticks": 4,
+            "ema_separation_pct": 0.06,
+            "confirm_ticks": 3,
             "stop_loss_pct": 1.5,
             "take_profit_pct": 2.0,
             "min_profit_pct": 0.15,
-            "min_hold_cycles": 4,
-            "stagnant_exit_cycles": 8,
+            "min_hold_cycles": 3,
+            "stagnant_exit_cycles": 6,
         },
     }
 
@@ -696,8 +691,7 @@ def run() -> None:
                             if worst_pair is None:
                                 continue  # no rotation candidate; skip this signal
 
-                            # Sell the loser
-                            worst_asset = worst_pair.split("/", 1)[0]
+                            # Sell the loser                            worst_asset = worst_pair.split("/", 1)[0]
                             worst_qty = free_balance(balance, worst_asset)
                             worst_price_now = float(
                                 selected[worst_pair].get("LastPrice", 0.0)
@@ -736,7 +730,7 @@ def run() -> None:
                                 worst_pair,
                                 worst_pnl,
                                 cand["pair"],
-                                new_score,
+                                cand["score"],
                             )
 
                         if (

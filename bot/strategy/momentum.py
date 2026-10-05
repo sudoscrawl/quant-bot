@@ -32,12 +32,8 @@ def ema(prices: list[float], period: int) -> float:
 def rsi(prices: list[float], period: int) -> float:
     if len(prices) < period + 1:
         return 50.0
-<<<<<<< HEAD
     relevant = prices[-(period + 1) :]
     changes = [relevant[i + 1] - relevant[i] for i in range(len(relevant) - 1)]
-=======
-    changes = [prices[i + 1] - prices[i] for i in range(-period - 1, -1)]
->>>>>>> parent of 7d70ca2 (feat: new strategy implementations)
     gain = sum(change for change in changes if change > 0) / period
     loss = sum(-change for change in changes if change < 0) / period
     return 100.0 if loss == 0 else 100 - 100 / (1 + gain / loss)
@@ -88,7 +84,6 @@ class MomentumStrategy:
 
         if state.entry_price:
             state.hold_cycles += 1
-<<<<<<< HEAD
             pnl = (
                 (price - state.entry_price) / state.entry_price * 100
                 if state.entry_price > 0
@@ -100,34 +95,28 @@ class MomentumStrategy:
                 signal = "SELL"
                 logger.info("%s TAKE-PROFIT: pnl=%.2f%%", pair, pnl)
 
-            # 2. Soft stop-loss — only exit when momentum has already turned
-            #    (fast EMA below slow for ≥ 2 ticks confirms it's not a brief spike).
-            #    Avoids panic-selling a dip that's still in an uptrend.
-            elif pnl <= -cfg.stop_loss_pct and state.ticks_below_slow >= 2:
+            # 2. Hard stop-loss — exit immediately when loss exceeds threshold.
+            #    No EMA confirmation required: when you're down stop_loss_pct
+            #    the trade is simply wrong regardless of EMA position.
+            elif pnl <= -cfg.stop_loss_pct:
                 signal = "SELL"
                 state.cooldown_cycles = cfg.loss_cooldown_cycles
                 logger.warning(
-                    "%s SOFT STOP-LOSS: pnl=%.2f%% ema_below=%d ticks — cooldown %d",
+                    "%s STOP-LOSS: pnl=%.2f%% — cooldown %d",
                     pair,
                     pnl,
-                    state.ticks_below_slow,
                     cfg.loss_cooldown_cycles,
                 )
 
-            # 3. EMA bearish crossover — fresh cross of fast below slow, held long
-            #    enough to not be noise, and RSI not already oversold.
-            #    No profit requirement: if momentum reversed we exit regardless.
+            # 3. EMA bearish crossover — only sell when:
+            #    - EMA has crossed down (momentum reversed)
+            #    - RSI not oversold (could bounce)
+            #    - Held long enough to not be noise
+            #    - Position is PROFITABLE — never sell at a loss on signal alone
+            #      (stop-loss handles loss exits; signal sells should lock in gains)
             elif (
                 previous_fast >= previous_slow
                 and fast < slow
-=======
-            pnl = (price - state.entry_price) / state.entry_price * 100
-            if pnl <= -cfg.stop_loss_pct or pnl >= cfg.take_profit_pct:
-                return "SELL"
-            crossed_down = previous_fast >= previous_slow and fast < slow
-            if (
-                crossed_down
->>>>>>> parent of 7d70ca2 (feat: new strategy implementations)
                 and current_rsi >= cfg.rsi_sell_min
                 and state.hold_cycles >= cfg.min_hold_cycles
                 and pnl >= cfg.min_profit_pct
@@ -135,7 +124,6 @@ class MomentumStrategy:
                 return "SELL"
             return "HOLD"
 
-<<<<<<< HEAD
             # 4. Stagnant exit — trade isn't working and EMA has turned against us.
             #    Requires EMA confirmed below slow for ≥ 2 ticks (not just a dip)
             #    and held long enough to be sure it's not a warmup artefact.
@@ -197,18 +185,6 @@ class MomentumStrategy:
 
         state.last_signal = signal
         return signal
-=======
-        crossed_up = previous_fast <= previous_slow and fast > slow
-        confirmed = cfg.confirm_ticks <= state.ticks_above_slow <= cfg.confirm_ticks + 2
-        if (
-            (crossed_up or confirmed)
-            and state.cooldown_cycles == 0
-            and cfg.rsi_buy_min <= current_rsi <= cfg.rsi_buy_max
-            and separation >= cfg.ema_separation_pct
-        ):
-            return "BUY"
-        return "HOLD"
->>>>>>> parent of 7d70ca2 (feat: new strategy implementations)
 
     def indicators(self, pair: str) -> dict[str, float | int | bool]:
         state, cfg = self._state(pair), self.settings
