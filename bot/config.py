@@ -22,7 +22,8 @@ class Config(BaseSettings):
 
     # Live execution. There is deliberately no paper-trading mode.
     live_trading_enabled: bool = Field(default=False, alias="LIVE_TRADING_ENABLED")
-    poll_interval_seconds: int = Field(default=60, alias="POLL_INTERVAL_SECONDS")
+    poll_interval_seconds: int = Field(default=60, alias="POLL_INTERVAL_SECONDS")  # 60s ticks
+
     symbols: tuple[str, ...] = Field(
         default=(
             "BTC/USD",
@@ -113,6 +114,7 @@ class Config(BaseSettings):
     base_position_pct: float = Field(default=0.055, alias="BASE_POSITION_PCT")
     min_order_usd: float = Field(default=10.0, alias="MIN_ORDER_USD")
     max_drawdown_pct: float = Field(default=0.15, alias="MAX_DRAWDOWN_PCT")
+
     commission_rate: float = Field(default=0.001, alias="COMMISSION_RATE")
     reserve_pct: float = Field(default=0.03, alias="RESERVE_PCT")
 

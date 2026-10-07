@@ -1,4 +1,6 @@
+
 """Sizing and portfolio circuit-breaker for live spot orders."""
+
 
 from math import floor
 
@@ -26,6 +28,7 @@ class RiskManager:
     ) -> float:
         if self.halted or equity <= 0:
             return 0.0
+
         conviction = 0.80 + min(max(signal_strength, 0.0), 1.0) * 0.50
         volatility_adjustment = max(0.45, 1 / (1 + max(volatility_pct, 0.0) * 0.25))
         size = (
@@ -40,6 +43,7 @@ class RiskManager:
             available_usd * (1 - self.settings.reserve_pct),
         )
         return size if size >= self.settings.min_order_usd else 0.0
+
 
     def quantity(self, usd_amount: float, price: float, precision: int) -> float:
         if price <= 0:

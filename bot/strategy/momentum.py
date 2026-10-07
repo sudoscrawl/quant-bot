@@ -33,8 +33,8 @@ def rsi(prices: list[float], period: int) -> float:
         return 50.0
     relevant = prices[-(period + 1) :]
     changes = [relevant[i + 1] - relevant[i] for i in range(len(relevant) - 1)]
-    gain = sum(c for c in changes if c > 0) / period
-    loss = sum(-c for c in changes if c < 0) / period
+    gain = sum(change for change in changes if change > 0) / period
+    loss = sum(-change for change in changes if change < 0) / period
     return 100.0 if loss == 0 else 100 - 100 / (1 + gain / loss)
 
 
@@ -192,24 +192,28 @@ class MomentumStrategy:
         # ── SELL path (exit long) ────────────────────────────────────
         if state.in_long:
             state.hold_cycles += 1
-            state.trailing_high = max(state.trailing_high, price)
-            pnl = (price - state.entry_price) / state.entry_price * 100
+            pnl = (
+                (price - state.entry_price) / state.entry_price * 100
+                if state.entry_price > 0
+                else 0.0
+            )
 
             # 1. Hard take-profit
             if pnl >= cfg.take_profit_pct:
                 logger.info("%s TAKE-PROFIT: pnl=%.2f%%", pair, pnl)
                 return "SELL"
 
-            # 2. Hard stop-loss
-            if pnl <= -cfg.stop_loss_pct:
-                logger.warning("%s STOP-LOSS: pnl=%.2f%%", pair, pnl)
-                return "SELL"
-
-            # 3. Trailing stop — once profit exceeds activation threshold,
-            #    exit if price drops trailing_stop_pct from the high.
-            if state.trailing_high > 0:
-                trail_pnl = (
-                    (state.trailing_high - state.entry_price) / state.entry_price * 100
+            # 2. Hard stop-loss — exit immediately when loss exceeds threshold.
+            #    No EMA confirmation required: when you're down stop_loss_pct
+            #    the trade is simply wrong regardless of EMA position.
+            elif pnl <= -cfg.stop_loss_pct:
+                signal = "SELL"
+                state.cooldown_cycles = cfg.loss_cooldown_cycles
+                logger.warning(
+                    "%s STOP-LOSS: pnl=%.2f%% — cooldown %d",
+                    pair,
+                    pnl,
+                    cfg.loss_cooldown_cycles,
                 )
                 if trail_pnl >= cfg.trailing_activate_pct:
                     drawdown_from_high = (
@@ -224,10 +228,16 @@ class MomentumStrategy:
                         )
                         return "SELL"
 
-            # 4. Bearish EMA crossover exit — momentum reversed, held long enough
-            crossed_down = prev_fast >= prev_slow and fast < slow
-            if (
-                crossed_down
+            # 3. EMA bearish crossover — only sell when:
+            #    - EMA has crossed down (momentum reversed)
+            #    - RSI not oversold (could bounce)
+            #    - Held long enough to not be noise
+            #    - Position is PROFITABLE — never sell at a loss on signal alone
+            #      (stop-loss handles loss exits; signal sells should lock in gains)
+            elif (
+                previous_fast >= previous_slow
+                and fast < slow
+                and current_rsi >= cfg.rsi_sell_min
                 and state.hold_cycles >= cfg.min_hold_cycles
                 and current_rsi < cfg.rsi_sell_threshold
             ):
@@ -239,8 +249,10 @@ class MomentumStrategy:
                 )
                 return "SELL"
 
-            # 5. Stagnant exit — position hasn't gone anywhere, EMA turned against
-            if (
+            # 4. Stagnant exit — trade isn't working and EMA has turned against us.
+            #    Requires EMA confirmed below slow for ≥ 2 ticks (not just a dip)
+            #    and held long enough to be sure it's not a warmup artefact.
+            elif (
                 state.hold_cycles >= cfg.stagnant_exit_cycles
                 and state.ticks_below_slow >= 2
                 and pnl < cfg.min_profit_pct
@@ -367,26 +379,8 @@ class MomentumStrategy:
         bb_short = not math.isnan(bb_upper) and price >= bb_mid  # above midline
         momentum_short = roc < cfg.roc_short_threshold  # strong downward momentum
 
-        if (
-            (crossed_down or confirmed_down)
-            and state.cooldown_cycles == 0
-            and cfg.rsi_short_min <= current_rsi <= cfg.rsi_short_max
-            and separation <= -cfg.ema_separation_pct
-            and (bb_short or momentum_short)
-        ):
-            logger.info(
-                "%s SHORT signal: rsi=%.1f sep=%.3f%% roc=%.2f bb_pos=%s",
-                pair,
-                current_rsi,
-                separation,
-                roc,
-                "above_mid" if bb_short else "below_mid",
-            )
-            return "SHORT"
-
-        return "HOLD"
-
-    # ── Indicator snapshot for scoring / logging ─────────────────────────
+        state.last_signal = signal
+        return signal
 
     def indicators(self, pair: str) -> dict[str, float | int | bool]:
         state, cfg = self._state(pair), self.settings

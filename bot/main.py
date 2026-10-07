@@ -62,7 +62,6 @@ def _volatility_pct(pair: str, prices: list[float] | None = None) -> float:
     ]
     return sum(returns) / len(returns) if returns else 1.0
 
-
 def _select_tracked_symbols(
     exchange_info: Mapping[str, Any],
     tickers: Mapping[str, Mapping[str, Any]],
@@ -551,9 +550,88 @@ def run() -> None:
                     reverse=True,
                 )
 
-                # ── 4. Execute the best candidate entries ─────────────────
-                total_open = len(positions) + len(short_positions)
-                available_slots = max(0, config.max_open_positions - total_open)
+                if not risk.halted and candidates:
+                    for cand in candidates:
+                        if (
+                            available_slots <= 0
+                            or len(positions) >= config.max_open_positions
+                        ):
+                            # ── Position rotation ─────────────────────────
+                            # Slots are full. Rotate out the worst loser if:
+                            #   - Its loss is between -0.5% and -1.8%
+                            #     (stop-loss hasn't caught it yet)
+                            #   - The new signal is meaningfully strong
+                            # Only rotate if the incoming signal is stronger than
+                            # the min_buy_score threshold — same bar as normal buys
+                            if cand["score"] < config.min_buy_score:
+                                continue  # new signal not strong enough to warrant rotation
+
+                            worst_pair: str | None = None
+                            worst_pnl = 0.0  # only consider negatives
+
+                            for held_pair, held_entry in positions.items():
+                                if held_pair not in selected:
+                                    continue
+                                held_price = float(
+                                    selected[held_pair].get("LastPrice", 0.0)
+                                )
+                                if held_price <= 0 or held_entry <= 0:
+                                    continue
+                                held_pnl = (held_price - held_entry) / held_entry * 100
+                                if -1.8 <= held_pnl <= -0.5 and held_pnl < worst_pnl:
+                                    worst_pnl = held_pnl
+                                    worst_pair = held_pair
+
+                            if worst_pair is None:
+                                continue  # no rotation candidate; skip this signal
+
+                            # Sell the loser                            worst_asset = worst_pair.split("/", 1)[0]
+                            worst_qty = free_balance(balance, worst_asset)
+                            worst_price_now = float(
+                                selected[worst_pair].get("LastPrice", 0.0)
+                            )
+                            precision, _ = _exchange_rules(exchange_info, worst_pair)
+                            factor = 10**precision
+                            worst_qty = int(worst_qty * factor) / factor
+                            if worst_qty <= 0:
+                                continue
+
+                            rot_result = client.place_order(
+                                worst_pair, "SELL", worst_qty
+                            )
+                            if not _accepted(rot_result, worst_pair, "SELL"):
+                                continue
+
+                            rot_fill = _filled_price(rot_result, worst_price_now)
+                            DB.insert_trade_from_order(
+                                rot_result,
+                                mode="LIVE",
+                                session_id=session_id,
+                                fallback_pair=worst_pair,
+                                fallback_side="SELL",
+                                fallback_price=rot_fill,
+                                fallback_qty=worst_qty,
+                            )
+                            strategy.notify_sold(worst_pair, was_loss=True)
+                            positions.pop(worst_pair, None)
+                            _save_positions(positions)
+                            available_usd += worst_qty * rot_fill
+                            cycle_sells.append(worst_pair)
+                            available_slots += 1
+                            logger.info(
+                                "ROTATION SELL %s (pnl=%.2f%%) to make room for %s "
+                                "(score=%.4f)",
+                                worst_pair,
+                                worst_pnl,
+                                cand["pair"],
+                                cand["score"],
+                            )
+
+                        if (
+                            available_slots <= 0
+                            or len(positions) >= config.max_open_positions
+                        ):
+                            break
 
                 if available_slots > 0 and not risk.halted and all_candidates:
                     logger.info(
