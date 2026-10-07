@@ -63,181 +63,6 @@ def _volatility_pct(pair: str, prices: list[float] | None = None) -> float:
     return sum(returns) / len(returns) if returns else 1.0
 
 
-<<<<<<< HEAD
-def _detect_market_state(
-    tickers: Mapping[str, Mapping[str, Any]],
-    strategy: MomentumStrategy,
-    pairs: list[str],
-) -> dict[str, Any]:
-    """
-    Classify the current market regime and return adaptive strategy overrides.
-
-    States
-    ------
-    RECOVERY   — broadly oversold but bouncing upward; catch early entries
-    TRENDING   — healthy uptrend with RSI in range; standard settings
-    RANGING    — choppy, no clear direction; demand cleaner crossovers
-    OVERBOUGHT — RSI elevated across the board; risk of reversal
-    DOWNTURN   — majority falling; buy only the very strongest signals
-
-    Returns a dict with keys ``state``, ``avg_rsi``, ``ema_up_pct``,
-    ``rising_pct``, and ``params`` (overrides to apply to the strategy config).
-    Returns {} when fewer than 80 % of pairs are warmed up.
-    """
-    warmed = [p for p in pairs if not strategy.indicators(p).get("warming_up", False)]
-    if len(warmed) < max(1, len(pairs) * 0.8):
-        return {}
-
-    rsi_vals = [float(strategy.indicators(p).get("rsi", 50.0)) for p in warmed]
-    avg_rsi = sum(rsi_vals) / len(rsi_vals)
-
-    ema_up = sum(
-        1
-        for p in warmed
-        if float(strategy.indicators(p).get("fast_ema", 0.0))
-        > float(strategy.indicators(p).get("slow_ema", 1.0))
-    )
-    ema_up_pct = ema_up / len(warmed)
-
-    changes = [float(tickers.get(p, {}).get("Change", 0.0)) * 100 for p in warmed]
-    rising_pct = sum(1 for c in changes if c > 0) / len(changes)
-
-    if avg_rsi < 38 and rising_pct > 0.4:
-        state = "RECOVERY"
-    elif avg_rsi < 42 and rising_pct < 0.4:
-        state = "DOWNTURN"
-    elif avg_rsi > 65 and ema_up_pct > 0.6:
-        state = "OVERBOUGHT"
-    elif 42 <= avg_rsi <= 62 and ema_up_pct > 0.45:
-        state = "TRENDING"
-    else:
-        state = "RANGING"
-
-    params: dict[str, dict[str, float | int]] = {
-        "RECOVERY": {
-            # Broadly oversold but bouncing — enter aggressively, hold patiently
-            "rsi_buy_min": 38.0,
-            "rsi_buy_max": 62.0,
-            "ema_separation_pct": 0.02,
-            "confirm_ticks": 3,
-            "stop_loss_pct": 2.0,
-            "take_profit_pct": 2.5,
-            "min_profit_pct": 0.20,
-            "min_hold_cycles": 8,  # hold longer — early recovery needs time to develop
-            "stagnant_exit_cycles": 16,
-        },
-        "TRENDING": {
-            # Healthy uptrend — hold the longest, let winners run
-            "rsi_buy_min": 44.0,
-            "rsi_buy_max": 60.0,
-            "ema_separation_pct": 0.04,
-            "confirm_ticks": 3,
-            "stop_loss_pct": 2.5,
-            "take_profit_pct": 3.5,
-            "min_profit_pct": 0.25,
-            "min_hold_cycles": 8,  # don't cut winners on minor EMA wiggles
-            "stagnant_exit_cycles": 25,
-        },
-        "RANGING": {
-            # Choppy — exit faster, don't let stagnant trades tie up capital
-            "rsi_buy_min": 45.0,
-            "rsi_buy_max": 56.0,
-            "ema_separation_pct": 0.06,
-            "confirm_ticks": 3,
-            "stop_loss_pct": 2.0,
-            "take_profit_pct": 2.0,
-            "min_profit_pct": 0.20,
-            "min_hold_cycles": 5,  # exit quickly on reversal in choppy market
-            "stagnant_exit_cycles": 15,
-        },
-        "OVERBOUGHT": {
-            # RSI elevated — quick exits, tight targets, fast stagnant detection
-            "rsi_buy_min": 48.0,
-            "rsi_buy_max": 56.0,
-            "ema_separation_pct": 0.08,
-            "confirm_ticks": 4,
-            "stop_loss_pct": 1.5,
-            "take_profit_pct": 2.0,
-            "min_profit_pct": 0.15,
-            "min_hold_cycles": 4,
-            "stagnant_exit_cycles": 8,
-        },
-        "DOWNTURN": {
-            # Majority falling — fastest exits, tightest stops
-            "rsi_buy_min": 50.0,
-            "rsi_buy_max": 58.0,
-            "ema_separation_pct": 0.08,
-            "confirm_ticks": 4,
-            "stop_loss_pct": 1.5,
-            "take_profit_pct": 2.0,
-            "min_profit_pct": 0.15,
-            "min_hold_cycles": 4,
-            "stagnant_exit_cycles": 8,
-        },
-    }
-
-    return {
-        "state": state,
-        "avg_rsi": round(avg_rsi, 1),
-        "ema_up_pct": round(ema_up_pct * 100, 1),
-        "rising_pct": round(rising_pct * 100, 1),
-        "params": params[state],
-    }
-
-
-def _apply_market_state(
-    strategy: MomentumStrategy,
-    market: dict[str, Any],
-    last_state: str | None,
-) -> str | None:
-    """
-    Apply adaptive parameter overrides from _detect_market_state to the live
-    strategy config object and log when the regime changes.
-
-    Returns the new state string (or last_state if market is empty).
-    """
-    if not market:
-        return last_state
-
-    p = market["params"]
-    cfg = strategy.settings
-    cfg.rsi_buy_min = p["rsi_buy_min"]
-    cfg.rsi_buy_max = p["rsi_buy_max"]
-    cfg.ema_separation_pct = p["ema_separation_pct"]
-    cfg.confirm_ticks = int(p["confirm_ticks"])
-    cfg.stop_loss_pct = p["stop_loss_pct"]
-    cfg.take_profit_pct = p["take_profit_pct"]
-    cfg.min_profit_pct = p["min_profit_pct"]
-    cfg.min_hold_cycles = int(p["min_hold_cycles"])
-    cfg.stagnant_exit_cycles = int(p["stagnant_exit_cycles"])
-
-    new_state = market["state"]
-    if new_state != last_state:
-        logger.info(
-            "Market regime: %s → %s  (avg_rsi=%.1f  ema_up=%.0f%%  rising=%.0f%%)",
-            last_state,
-            new_state,
-            market["avg_rsi"],
-            market["ema_up_pct"],
-            market["rising_pct"],
-        )
-        logger.info(
-            "Adapted params: rsi=%s–%s  sep=%.2f%%  confirm=%d  stop=%.1f%%  "
-            "target=%.1f%%  hold≥%d  stagnant≥%d",
-            p["rsi_buy_min"],
-            p["rsi_buy_max"],
-            p["ema_separation_pct"],
-            p["confirm_ticks"],
-            p["stop_loss_pct"],
-            p["take_profit_pct"],
-            p["min_hold_cycles"],
-            p["stagnant_exit_cycles"],
-        )
-    return new_state
-
-
-=======
->>>>>>> parent of 7d70ca2 (feat: new strategy implementations)
 def _select_tracked_symbols(
     exchange_info: Mapping[str, Any],
     tickers: Mapping[str, Mapping[str, Any]],
@@ -346,6 +171,61 @@ def _score_opportunity(
     return round(max(0.0, score), 4)
 
 
+def _score_short_opportunity(
+    pair: str,
+    indicators: Mapping[str, Any],
+    ticker: Mapping[str, Any],
+    volatility: float,
+) -> float:
+    """Calculate a short opportunity score (higher = stronger bearish signal)."""
+    if indicators.get("warming_up", False):
+        return 0.0
+
+    ema_sep = abs(min(0.0, float(indicators.get("ema_sep_pct", 0.0))))
+    rsi_val = float(indicators.get("rsi", 50.0))
+    change_24h = float(ticker.get("Change", 0.0)) * 100.0
+    unit_trade_val = float(ticker.get("UnitTradeValue", 0.0))
+    price = float(ticker.get("LastPrice", 0.0))
+    bid = float(ticker.get("MaxBid", 0.0))
+    ask = float(ticker.get("MinAsk", 0.0))
+
+    if price <= 0:
+        return 0.0
+
+    # 1. EMA trend strength (negative separation rewarded for shorts)
+    trend_factor = max(0.1, 1.0 + ema_sep * 10.0)
+
+    # 2. RSI — overbought conditions are better for shorts
+    rsi_factor = max(0.1, 1.0 - abs(rsi_val - 45.0) / 30.0)
+
+    # 3. 24h momentum — falling assets are better short targets
+    change_factor = max(0.2, 1.0 + (-change_24h / 15.0))
+
+    # 4. Volume / Liquidity
+    volume_factor = (
+        min(2.5, max(0.5, (unit_trade_val / 20_000.0) ** 0.25))
+        if unit_trade_val > 0
+        else 0.5
+    )
+
+    # 5. Volatility
+    vol_factor = min(2.0, max(0.6, volatility / 1.2))
+
+    # 6. Spread penalty
+    spread_bps = (ask - bid) / price * 10_000 if price > 0 else 0.0
+    spread_factor = max(0.3, 1.0 - (spread_bps / 150.0))
+
+    score = (
+        trend_factor
+        * rsi_factor
+        * change_factor
+        * volume_factor
+        * vol_factor
+        * spread_factor
+    )
+    return round(max(0.0, score), 4)
+
+
 def _load_positions(
     strategy: MomentumStrategy,
     balance: Mapping[str, object],
@@ -389,8 +269,24 @@ def _load_positions(
     return active
 
 
+def _load_short_positions(
+    strategy: MomentumStrategy,
+) -> dict[str, float]:
+    """Load active short positions from DB state."""
+    saved = json.loads(DB.get_state("bot_short_positions", "{}") or "{}")
+    active: dict[str, float] = {}
+    for pair, entry_price in saved.items():
+        active[pair] = float(entry_price)
+        strategy.notify_shorted(pair, float(entry_price))
+    return active
+
+
 def _save_positions(positions: Mapping[str, float]) -> None:
     DB.set_state("bot_positions", json.dumps(positions, sort_keys=True))
+
+
+def _save_short_positions(positions: Mapping[str, float]) -> None:
+    DB.set_state("bot_short_positions", json.dumps(positions, sort_keys=True))
 
 
 def _save_state(
@@ -399,6 +295,7 @@ def _save_state(
     equity: float,
     available_usd: float,
     positions: Mapping[str, float],
+    short_positions: Mapping[str, float],
     tracked_symbols: list[str],
     candidates: list[dict[str, Any]],
     cycle_summary: Mapping[str, Any],
@@ -419,12 +316,15 @@ def _save_state(
         "available_usd": round(available_usd, 4),
         "tracked_symbols_count": len(tracked_symbols),
         "open_positions_count": len(positions),
+        "open_short_positions_count": len(short_positions),
         "open_positions": dict(positions),
+        "open_short_positions": dict(short_positions),
     }
 
     DB.set_multiple_states(
         {
             "bot_positions": json.dumps(positions, sort_keys=True),
+            "bot_short_positions": json.dumps(short_positions, sort_keys=True),
             "bot_state": json.dumps(bot_state, sort_keys=True),
             "tracked_symbols": json.dumps(tracked_symbols),
             "top_candidates": json.dumps(candidates[:10]),
@@ -477,6 +377,7 @@ def run() -> None:
             portfolio_value_usd(initial_balance, initial_tickers), config
         )
         positions = _load_positions(strategy, initial_balance, initial_tickers)
+        short_positions = _load_short_positions(strategy)
 
         # Bulk restore history for all tracked symbols from DB in a single query
         history_bulk = DB.get_recent_prices_bulk(initial_tracked, config.min_history)
@@ -485,10 +386,12 @@ def run() -> None:
             strategy.restore(pair, pair_prices)
 
         logger.info(
-            "Bot initialized with %d tracked coins (min required: %d). Open positions: %d",
+            "Bot initialized with %d tracked coins (min required: %d). "
+            "Open longs: %d, Open shorts: %d",
             len(initial_tracked),
             config.min_symbols_tracked,
             len(positions),
+            len(short_positions),
         )
 
         while running:
@@ -508,102 +411,19 @@ def run() -> None:
 
                 cycle_sells: list[str] = []
                 cycle_buys: list[str] = []
-                candidates: list[dict[str, Any]] = []
+                cycle_shorts: list[str] = []
+                cycle_covers: list[str] = []
+                buy_candidates: list[dict[str, Any]] = []
+                short_candidates: list[dict[str, Any]] = []
 
-                # 1. Process SELL signals for currently held positions
+                # ── 1. Process SELL signals for long positions ────────────
                 for pair in list(positions.keys()):
                     if pair not in selected:
                         continue
                     ticker = selected[pair]
                     price = float(ticker.get("LastPrice", 0.0))
-<<<<<<< HEAD
-                    entry_price = positions[pair]
-
-                    # ── Trailing stop ─────────────────────────────────────
-                    # Once PnL ≥ 1.5%, move the effective entry to breakeven
-                    # (entry + round-trip commission) so the stop-loss now
-                    # protects against any net loss on the trade.
-                    if price > 0 and entry_price > 0:
-                        current_pnl_pct = (price - entry_price) / entry_price * 100
-                        breakeven = entry_price * (1 + 2 * config.commission_rate)
-                        st = strategy._state(pair)
-                        if current_pnl_pct >= 1.5 and st.entry_price < breakeven:
-                            logger.info(
-                                "TRAILING STOP %s: pnl=%.2f%% — entry moved "
-                                "%.4f → %.4f (stop %.4f → %.4f)",
-                                pair,
-                                current_pnl_pct,
-                                st.entry_price,
-                                breakeven,
-                                st.entry_price * (1 - config.stop_loss_pct / 100),
-                                breakeven * (1 - config.stop_loss_pct / 100),
-                            )
-                            st.entry_price = breakeven
-                            positions[pair] = breakeven
-
-                    # ── Proactive exit ────────────────────────────────────
-                    # Exit early (before stop-loss fires) when the position is
-                    # quietly losing ground with momentum clearly reversed:
-                    #   - PnL between -0.8% and -1.9% (stop not yet triggered)
-                    #   - Fast EMA crossed below slow EMA
-                    #   - RSI < 40 (momentum weakening)
-                    #   - Held for ≥ 3 cycles (not a brand-new entry)
-                    ind = strategy.indicators(pair)
-                    if (
-                        not ind.get("warming_up", False)
-                        and price > 0
-                        and entry_price > 0
-                    ):
-                        pnl_pct = (price - entry_price) / entry_price * 100
-                        fast_ema = float(ind.get("fast_ema", 0.0))
-                        slow_ema = float(ind.get("slow_ema", 1.0))
-                        current_rsi = float(ind.get("rsi", 50.0))
-                        hold_cycles = int(ind.get("hold_cycles", 0))
-
-                        if (
-                            -1.9 <= pnl_pct <= -0.8
-                            and fast_ema < slow_ema
-                            and current_rsi < 45
-                            and hold_cycles >= 3
-                        ):
-                            asset = pair.split("/", 1)[0]
-                            quantity = free_balance(balance, asset)
-                            precision, _ = _exchange_rules(exchange_info, pair)
-                            factor = 10**precision
-                            quantity = int(quantity * factor) / factor
-                            if quantity > 0:
-                                result = client.place_order(pair, "SELL", quantity)
-                                if _accepted(result, pair, "SELL"):
-                                    fill = _filled_price(result, price)
-                                    DB.insert_trade_from_order(
-                                        result,
-                                        mode="LIVE",
-                                        session_id=session_id,
-                                        fallback_pair=pair,
-                                        fallback_side="SELL",
-                                        fallback_price=fill,
-                                        fallback_qty=quantity,
-                                    )
-                                    strategy.notify_sold(pair, was_loss=True)
-                                    positions.pop(pair, None)
-                                    _save_positions(positions)
-                                    available_usd += quantity * fill
-                                    cycle_sells.append(pair)
-                                    logger.info(
-                                        "PROACTIVE EXIT %s qty=%s @ %.8f "
-                                        "pnl=%.2f%% rsi=%.1f",
-                                        pair,
-                                        quantity,
-                                        fill,
-                                        pnl_pct,
-                                        current_rsi,
-                                    )
-                            continue  # skip normal SELL check for this pair
-
-                    # ── Normal strategy SELL ──────────────────────────────
-=======
->>>>>>> parent of 7d70ca2 (feat: new strategy implementations)
                     action = strategy.update(pair, price)
+
                     if action == "SELL":
                         asset = pair.split("/", 1)[0]
                         quantity = free_balance(balance, asset)
@@ -626,23 +446,74 @@ def run() -> None:
                                 strategy.notify_sold(pair, fill < positions[pair])
                                 positions.pop(pair, None)
                                 _save_positions(positions)
+                                available_usd += quantity * fill
                                 cycle_sells.append(pair)
                                 logger.info(
                                     "LIVE SELL %s qty=%s @ %.8f", pair, quantity, fill
                                 )
 
-                # 2. Evaluate BUY opportunities across all tracked coins not in positions
+                # ── 2. Process COVER signals for short positions ──────────
+                for pair in list(short_positions.keys()):
+                    if pair not in selected:
+                        continue
+                    ticker = selected[pair]
+                    price = float(ticker.get("LastPrice", 0.0))
+                    action = strategy.update(pair, price)
+
+                    if action == "COVER":
+                        # To cover a short: BUY back the asset
+                        precision, _ = _exchange_rules(exchange_info, pair)
+                        short_entry = short_positions[pair]
+                        # Calculate the quantity to buy back (same notional / current price)
+                        budget = (
+                            short_entry
+                            * risk.quantity(short_entry, short_entry, precision)
+                            if short_entry > 0
+                            else 0.0
+                        )
+                        # Use the stored short quantity from the state if possible,
+                        # otherwise derive from notional
+                        short_qty_state = strategy._state(pair)
+                        cover_quantity = risk.quantity(
+                            available_usd * 0.5, price, precision
+                        )
+                        if cover_quantity > 0:
+                            result = client.place_order(pair, "BUY", cover_quantity)
+                            if _accepted(result, pair, "BUY"):
+                                fill = _filled_price(result, price)
+                                DB.insert_trade_from_order(
+                                    result,
+                                    mode="LIVE",
+                                    session_id=session_id,
+                                    fallback_pair=pair,
+                                    fallback_side="BUY",
+                                    fallback_price=fill,
+                                    fallback_qty=cover_quantity,
+                                )
+                                was_loss = fill > short_positions[pair]
+                                strategy.notify_covered(pair, was_loss)
+                                short_positions.pop(pair, None)
+                                _save_short_positions(short_positions)
+                                cycle_covers.append(pair)
+                                logger.info(
+                                    "LIVE COVER %s qty=%s @ %.8f",
+                                    pair,
+                                    cover_quantity,
+                                    fill,
+                                )
+
+                # ── 3. Evaluate BUY and SHORT candidates ──────────────────
                 for pair, ticker in selected.items():
-                    if pair in positions:
+                    if pair in positions or pair in short_positions:
                         continue
                     price = float(ticker.get("LastPrice", 0.0))
                     action = strategy.update(pair, price)
                     indicators = strategy.indicators(pair)
                     vol = _volatility_pct(pair, list(strategy._state(pair).prices))
-                    score = _score_opportunity(pair, indicators, ticker, vol)
 
                     if action == "BUY":
-                        candidates.append(
+                        score = _score_opportunity(pair, indicators, ticker, vol)
+                        buy_candidates.append(
                             {
                                 "pair": pair,
                                 "score": score,
@@ -651,112 +522,50 @@ def run() -> None:
                                 "volatility": vol,
                                 "24h_change": float(ticker.get("Change", 0.0)),
                                 "volume_usd": float(ticker.get("UnitTradeValue", 0.0)),
+                                "side": "BUY",
+                            }
+                        )
+                    elif action == "SHORT" and config.enable_shorts:
+                        score = _score_short_opportunity(pair, indicators, ticker, vol)
+                        short_candidates.append(
+                            {
+                                "pair": pair,
+                                "score": score,
+                                "price": price,
+                                "indicators": indicators,
+                                "volatility": vol,
+                                "24h_change": float(ticker.get("Change", 0.0)),
+                                "volume_usd": float(ticker.get("UnitTradeValue", 0.0)),
+                                "side": "SHORT",
                             }
                         )
 
-                # Sort candidates by money-making opportunity score (highest first)
-                candidates.sort(key=lambda c: c["score"], reverse=True)
+                # Sort candidates by score (highest first)
+                buy_candidates.sort(key=lambda c: c["score"], reverse=True)
+                short_candidates.sort(key=lambda c: c["score"], reverse=True)
 
-                # 3. Trade the most profitable / highest-scoring candidate coins
-                available_slots = max(0, config.max_open_positions - len(positions))
-<<<<<<< HEAD
+                # Merge and interleave: take the best signals regardless of direction
+                all_candidates = sorted(
+                    buy_candidates + short_candidates,
+                    key=lambda c: c["score"],
+                    reverse=True,
+                )
 
-                if not risk.halted and candidates:
-                    for cand in candidates:
-                        if (
-                            available_slots <= 0
-                            or len(positions) >= config.max_open_positions
-                        ):
-                            # ── Position rotation ─────────────────────────
-                            # Slots are full. Rotate out the worst loser if:
-                            #   - Its loss is between -0.5% and -1.8%
-                            #     (stop-loss hasn't caught it yet)
-                            #   - The new signal is meaningfully strong
-                            # Only rotate if the incoming signal is stronger than
-                            # the min_buy_score threshold — same bar as normal buys
-                            if cand["score"] < config.min_buy_score:
-                                continue  # new signal not strong enough to warrant rotation
+                # ── 4. Execute the best candidate entries ─────────────────
+                total_open = len(positions) + len(short_positions)
+                available_slots = max(0, config.max_open_positions - total_open)
 
-                            worst_pair: str | None = None
-                            worst_pnl = 0.0  # only consider negatives
-
-                            for held_pair, held_entry in positions.items():
-                                if held_pair not in selected:
-                                    continue
-                                held_price = float(
-                                    selected[held_pair].get("LastPrice", 0.0)
-                                )
-                                if held_price <= 0 or held_entry <= 0:
-                                    continue
-                                held_pnl = (held_price - held_entry) / held_entry * 100
-                                if -1.8 <= held_pnl <= -0.5 and held_pnl < worst_pnl:
-                                    worst_pnl = held_pnl
-                                    worst_pair = held_pair
-
-                            if worst_pair is None:
-                                continue  # no rotation candidate; skip this signal
-
-                            # Sell the loser
-                            worst_asset = worst_pair.split("/", 1)[0]
-                            worst_qty = free_balance(balance, worst_asset)
-                            worst_price_now = float(
-                                selected[worst_pair].get("LastPrice", 0.0)
-                            )
-                            precision, _ = _exchange_rules(exchange_info, worst_pair)
-                            factor = 10**precision
-                            worst_qty = int(worst_qty * factor) / factor
-                            if worst_qty <= 0:
-                                continue
-
-                            rot_result = client.place_order(
-                                worst_pair, "SELL", worst_qty
-                            )
-                            if not _accepted(rot_result, worst_pair, "SELL"):
-                                continue
-
-                            rot_fill = _filled_price(rot_result, worst_price_now)
-                            DB.insert_trade_from_order(
-                                rot_result,
-                                mode="LIVE",
-                                session_id=session_id,
-                                fallback_pair=worst_pair,
-                                fallback_side="SELL",
-                                fallback_price=rot_fill,
-                                fallback_qty=worst_qty,
-                            )
-                            strategy.notify_sold(worst_pair, was_loss=True)
-                            positions.pop(worst_pair, None)
-                            _save_positions(positions)
-                            available_usd += worst_qty * rot_fill
-                            cycle_sells.append(worst_pair)
-                            available_slots += 1
-                            logger.info(
-                                "ROTATION SELL %s (pnl=%.2f%%) to make room for %s "
-                                "(score=%.4f)",
-                                worst_pair,
-                                worst_pnl,
-                                cand["pair"],
-                                new_score,
-                            )
-
-                        if (
-                            available_slots <= 0
-                            or len(positions) >= config.max_open_positions
-                        ):
-                            break
-
-=======
-                if available_slots > 0 and not risk.halted and candidates:
+                if available_slots > 0 and not risk.halted and all_candidates:
                     logger.info(
-                        "Found %d candidate coins. Top picks: %s",
-                        len(candidates),
+                        "Found %d BUY and %d SHORT candidates. Top picks: %s",
+                        len(buy_candidates),
+                        len(short_candidates),
                         ", ".join(
-                            f"{c['pair']} (score: {c['score']})"
-                            for c in candidates[:available_slots]
+                            f"{c['pair']} ({c['side']} score={c['score']})"
+                            for c in all_candidates[:available_slots]
                         ),
                     )
-                    for cand in candidates[:available_slots]:
->>>>>>> parent of 7d70ca2 (feat: new strategy implementations)
+                    for cand in all_candidates[:available_slots]:
                         pair = cand["pair"]
                         price = cand["price"]
                         indicators = cand["indicators"]
@@ -772,45 +581,80 @@ def run() -> None:
                             vol,
                         )
                         quantity = risk.quantity(budget, price, precision)
+
                         if quantity > 0 and quantity * price >= max(
                             config.min_order_usd, exchange_minimum
                         ):
-                            result = client.place_order(pair, "BUY", quantity)
-                            if _accepted(result, pair, "BUY"):
-                                fill = _filled_price(result, price)
-                                DB.insert_trade_from_order(
-                                    result,
-                                    mode="LIVE",
-                                    session_id=session_id,
-                                    fallback_pair=pair,
-                                    fallback_side="BUY",
-                                    fallback_price=fill,
-                                    fallback_qty=quantity,
-                                )
-                                strategy.notify_bought(pair, fill)
-                                positions[pair] = fill
-                                _save_positions(positions)
-                                available_usd -= (
-                                    quantity * fill * (1 + config.commission_rate)
-                                )
-                                cycle_buys.append(pair)
-                                logger.info(
-                                    "LIVE BUY %s qty=%s @ %.8f (score=%.4f)",
-                                    pair,
-                                    quantity,
-                                    fill,
-                                    cand["score"],
-                                )
+                            if cand["side"] == "BUY":
+                                result = client.place_order(pair, "BUY", quantity)
+                                if _accepted(result, pair, "BUY"):
+                                    fill = _filled_price(result, price)
+                                    DB.insert_trade_from_order(
+                                        result,
+                                        mode="LIVE",
+                                        session_id=session_id,
+                                        fallback_pair=pair,
+                                        fallback_side="BUY",
+                                        fallback_price=fill,
+                                        fallback_qty=quantity,
+                                    )
+                                    strategy.notify_bought(pair, fill)
+                                    positions[pair] = fill
+                                    _save_positions(positions)
+                                    available_usd -= (
+                                        quantity * fill * (1 + config.commission_rate)
+                                    )
+                                    cycle_buys.append(pair)
+                                    logger.info(
+                                        "LIVE BUY %s qty=%s @ %.8f (score=%.4f)",
+                                        pair,
+                                        quantity,
+                                        fill,
+                                        cand["score"],
+                                    )
 
-                # 4. Save state to DB
+                            elif cand["side"] == "SHORT":
+                                # SHORT: SELL the asset to open a short position
+                                result = client.place_order(pair, "SELL", quantity)
+                                if _accepted(result, pair, "SELL"):
+                                    fill = _filled_price(result, price)
+                                    DB.insert_trade_from_order(
+                                        result,
+                                        mode="LIVE",
+                                        session_id=session_id,
+                                        fallback_pair=pair,
+                                        fallback_side="SELL",
+                                        fallback_price=fill,
+                                        fallback_qty=quantity,
+                                    )
+                                    strategy.notify_shorted(pair, fill)
+                                    short_positions[pair] = fill
+                                    _save_short_positions(short_positions)
+                                    available_usd -= (
+                                        quantity * fill * config.commission_rate
+                                    )
+                                    cycle_shorts.append(pair)
+                                    logger.info(
+                                        "LIVE SHORT %s qty=%s @ %.8f (score=%.4f)",
+                                        pair,
+                                        quantity,
+                                        fill,
+                                        cand["score"],
+                                    )
+
+                # ── 5. Save state to DB ───────────────────────────────────
                 cycle_summary = {
                     "timestamp": datetime.now(UTC).isoformat(),
                     "tracked_coins_count": len(selected),
-                    "open_positions": len(positions),
+                    "open_long_positions": len(positions),
+                    "open_short_positions": len(short_positions),
                     "equity": round(equity, 4),
                     "buys_executed": cycle_buys,
                     "sells_executed": cycle_sells,
-                    "candidates_count": len(candidates),
+                    "shorts_executed": cycle_shorts,
+                    "covers_executed": cycle_covers,
+                    "buy_candidates_count": len(buy_candidates),
+                    "short_candidates_count": len(short_candidates),
                 }
                 _save_state(
                     session_id=session_id,
@@ -818,15 +662,18 @@ def run() -> None:
                     equity=equity,
                     available_usd=available_usd,
                     positions=positions,
+                    short_positions=short_positions,
                     tracked_symbols=list(selected.keys()),
-                    candidates=candidates,
+                    candidates=all_candidates,
                     cycle_summary=cycle_summary,
                 )
 
                 logger.info(
-                    "Cycle complete: %d coins monitored, %d positions open, equity=$%.2f",
+                    "Cycle complete: %d coins monitored, %d longs, %d shorts, "
+                    "equity=$%.2f",
                     len(selected),
                     len(positions),
+                    len(short_positions),
                     equity,
                 )
                 time.sleep(config.poll_interval_seconds)
