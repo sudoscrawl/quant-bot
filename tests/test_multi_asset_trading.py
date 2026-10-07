@@ -1,5 +1,3 @@
-
-
 from bot.config import config
 from bot.main import _save_state, _score_opportunity, _select_tracked_symbols
 from bot.risk import RiskManager
@@ -101,6 +99,7 @@ def test_save_state_persists_to_db():
         equity=51000.0,
         available_usd=25000.0,
         positions=positions,
+        short_positions={},
         tracked_symbols=tracked,
         candidates=candidates,
         cycle_summary=summary,
