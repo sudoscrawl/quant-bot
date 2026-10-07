@@ -1,10 +1,13 @@
 import hashlib
 import hmac
+import logging
 import time
 
 import httpx
 
 from bot.config import config
+
+logger = logging.getLogger(__name__)
 
 BASE_URL = "https://mock-api.roostoo.com"
 
@@ -34,7 +37,7 @@ class RoostooClient:
 
             DB.log_api_event(endpoint=endpoint, success=success, message=message)
         except Exception:
-            pass
+            logger.debug("Failed to record API event for %s", endpoint, exc_info=True)
 
     def _request(self, method: str, endpoint: str, **kwargs) -> httpx.Response:
         """Execute an HTTP request and log the API event to the database."""
@@ -54,8 +57,8 @@ class RoostooClient:
                     if isinstance(data, dict) and not data.get("Success", True):
                         success = False
                         msg += f" - {data.get('ErrMsg', 'Exchange error')}"
-                except Exception:
-                    pass
+                except (ValueError, TypeError):
+                    logger.debug("Response is not JSON or cannot be parsed")
             else:
                 msg += f": {response.text[:200]}"
 
@@ -77,8 +80,9 @@ class RoostooClient:
             # Use the midpoint of the round-trip to estimate one-way latency.
             local_mid = (local_before + local_after) // 2
             self._time_offset_ms = server_time - local_mid
-        except Exception:
+        except (httpx.HTTPError, KeyError, ValueError) as exc:
             # If the time-sync request fails, fall back to local time.
+            logger.debug("Server time sync failed, falling back to local time: %s", exc)
             self._time_offset_ms = 0
 
     def _generate_signature(self, params: dict) -> str:

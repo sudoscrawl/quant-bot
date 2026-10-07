@@ -21,26 +21,26 @@ from bot.strategy import MomentumStrategy
 logger = logging.getLogger(__name__)
 
 
-def _exchange_rules(info: Mapping[str, object], pair: str) -> tuple[int, float]:
-    rules = (info.get("TradePairs", {}) if isinstance(info, Mapping) else {}).get(
-        pair, {}
-    )
+def _exchange_rules(info: Mapping[str, Any], pair: str) -> tuple[int, float]:
+    pairs_info = info.get("TradePairs", {}) if isinstance(info, Mapping) else {}
+    rules = pairs_info.get(pair, {}) if isinstance(pairs_info, Mapping) else {}
     if not isinstance(rules, Mapping):
         return 6, 0.0
     return int(rules.get("AmountPrecision", 6)), float(rules.get("MiniOrder", 0.0))
 
 
-def _order_detail(order: Mapping[str, object]) -> Mapping[str, object]:
+def _order_detail(order: Mapping[str, Any]) -> Mapping[str, Any]:
     detail = order.get("OrderDetail", order)
     return detail if isinstance(detail, Mapping) else {}
 
 
-def _filled_price(order: Mapping[str, object], fallback: float) -> float:
+def _filled_price(order: Mapping[str, Any], fallback: float) -> float:
     detail = _order_detail(order)
-    return float(detail.get("FilledAverPrice") or detail.get("Price") or fallback)
+    price_val = detail.get("FilledAverPrice") or detail.get("Price")
+    return float(price_val) if price_val is not None else fallback
 
 
-def _signal_strength(indicators: Mapping[str, object]) -> float:
+def _signal_strength(indicators: Mapping[str, Any]) -> float:
     separation = abs(float(indicators.get("ema_sep_pct", 0.0)))
     rsi_value = float(indicators.get("rsi", 50.0))
     return min(
@@ -463,17 +463,6 @@ def run() -> None:
                     if action == "COVER":
                         # To cover a short: BUY back the asset
                         precision, _ = _exchange_rules(exchange_info, pair)
-                        short_entry = short_positions[pair]
-                        # Calculate the quantity to buy back (same notional / current price)
-                        budget = (
-                            short_entry
-                            * risk.quantity(short_entry, short_entry, precision)
-                            if short_entry > 0
-                            else 0.0
-                        )
-                        # Use the stored short quantity from the state if possible,
-                        # otherwise derive from notional
-                        short_qty_state = strategy._state(pair)
                         cover_quantity = risk.quantity(
                             available_usd * 0.5, price, precision
                         )

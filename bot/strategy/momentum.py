@@ -175,7 +175,6 @@ class MomentumStrategy:
         prev_slow = ema(prices[:-1], cfg.slow_ema_period)
         current_rsi = rsi(prices, cfg.rsi_period)
         bb_upper, bb_mid, bb_lower = bollinger_bands(prices, cfg.bb_period, cfg.bb_std)
-        current_atr = atr(prices, cfg.atr_period)
         roc = rate_of_change(prices, cfg.roc_period)
         separation = (fast - slow) / slow * 100 if slow > 0 else 0.0
 
